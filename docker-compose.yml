@@ -1,0 +1,48 @@
+services:
+   postgres:
+     image: 
+     container_name: lab_db_pg
+     restart: always
+     ports:
+       - "5432:5432"
+     volumes:
+       - lab_postgres:/var/lib/postgresql/data
+     environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+     healthcheck:
+       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} -p 5432"]
+       interval: 5s
+       timeout: 5s
+       retries: 5
+     deploy:
+       resources:
+         limits:
+           cpus: '1.0' # 範例：限制最多使用 1 個 CPU 核心
+           memory: 1G   # 範例：限制最多使用 1GB 記憶體
+
+   redis:
+     image: redis:7.0-alpine
+     container_name: lab_redis
+     restart: always
+     ports:
+       - "6379:6379"
+     volumes:
+       - lab_redis:/data
+     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+     healthcheck:
+       test: ["CMD", "redis-cli", "ping"]
+       interval: 5s
+       timeout: 5s
+       retries: 5
+     deploy:
+       resources:
+         limits:
+           cpus: '0.5'
+           memory: 512M
+ 
+volumes:
+  lab_postgres:
+  lab_redis:
