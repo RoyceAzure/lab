@@ -1,33 +1,38 @@
 -- Users 表
-CREATE TABLE user  IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS "users"  (
     id UUID PRIMARY KEY,
-    google_id VARCHAR(255) UNIQUE NOT NULL,
+    google_id VARCHAR(255) UNIQUE NULL,
+    facebook_id VARCHAR(255) UNIQUE NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    name VARCHAR(255) NOT NULL,
+    account VARCHAR(30) UNIQUE NULL,
+    password_hash text NULL,
+    name VARCHAR(255) NULL,
     is_admin BOOLEAN NOT NULL,
+    is_active BOOLEAN NOT NULL,
     line_user_id VARCHAR(255) UNIQUE,
     line_linked_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Roles 表
-CREATE TABLE role  IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS "roles"  (
     id INTEGER PRIMARY KEY,
     name VARCHAR(50) UNIQUE NOT NULL,
     description VARCHAR(255)
 );
 
 -- Permissions 表
-CREATE TABLE permission IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS "permissions"  (
     id INTEGER PRIMARY KEY,
     name VARCHAR(50) UNIQUE NOT NULL,
+    resource VARCHAR(255) NOT NULL,
+    actions VARCHAR(255) NOT NULL,
     description VARCHAR(255)
 );
 
 -- User_Roles 表 (多對多關聯)
-CREATE TABLE user_role IF NOT EXISTS (
-    user_id INT NOT NULL,
+CREATE TABLE IF NOT EXISTS "user_roles"  (
+    user_id UUID NOT NULL,
     role_id INT NOT NULL,
     PRIMARY KEY (user_id, role_id),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -35,7 +40,7 @@ CREATE TABLE user_role IF NOT EXISTS (
 );
 
 -- Role_Permissions 表 (多對多關聯)
-CREATE TABLE role_permission IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS "role_permissions"  (
     role_id INT NOT NULL,
     permission_id INT NOT NULL,
     PRIMARY KEY (role_id, permission_id),
@@ -43,7 +48,7 @@ CREATE TABLE role_permission IF NOT EXISTS (
     FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE
 );
 
-CREATE TABLE user_session (
+CREATE TABLE IF NOT EXISTS "user_sessions"  (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     access_token TEXT NOT NULL,
@@ -59,6 +64,18 @@ CREATE TABLE user_session (
     revoked_at timestamptz 
 );
 
-CREATE INDEX idx_user_session_user_id ON user_session(user_id);
-CREATE INDEX idx_user_session_refresh_token ON user_session(refresh_token);
-CREATE INDEX idx_user_session_is_active ON user_session(is_active);
+
+-- email 認證表
+CREATE TABLE IF NOT EXISTS "email_vertify"  (
+    id VARCHAR(30) PRIMARY KEY NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    is_used BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at timestamptz  NOT NULL,
+    expires_at timestamptz NOT NULL
+);
+
+
+
+CREATE INDEX idx_user_sessions_user_id ON user_sessions(user_id);
+CREATE INDEX idx_user_sessions_refresh_token ON user_sessions(refresh_token);
+CREATE INDEX idx_user_sessions_is_active ON user_sessions(is_active);
