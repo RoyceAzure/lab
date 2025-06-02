@@ -212,3 +212,6 @@
 #test
 **.sh
 
+#cursor
+.cursor
+
