@@ -11,15 +11,15 @@ import (
 )
 
 const createEmailVertify = `-- name: CreateEmailVertify :one
-INSERT INTO email_vertify (id, email, is_used, created_at, expires_at)
+INSERT INTO email_vertify (id, email, is_valid, created_at, expires_at)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, email, is_used, created_at, expires_at
+RETURNING id, email, is_valid, created_at, expires_at
 `
 
 type CreateEmailVertifyParams struct {
 	ID        string    `json:"id"`
 	Email     string    `json:"email"`
-	IsUsed    bool      `json:"is_used"`
+	IsValid   bool      `json:"is_valid"`
 	CreatedAt time.Time `json:"created_at"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
@@ -28,7 +28,7 @@ func (q *Queries) CreateEmailVertify(ctx context.Context, arg CreateEmailVertify
 	row := q.db.QueryRow(ctx, createEmailVertify,
 		arg.ID,
 		arg.Email,
-		arg.IsUsed,
+		arg.IsValid,
 		arg.CreatedAt,
 		arg.ExpiresAt,
 	)
@@ -36,11 +36,23 @@ func (q *Queries) CreateEmailVertify(ctx context.Context, arg CreateEmailVertify
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
-		&i.IsUsed,
+		&i.IsValid,
 		&i.CreatedAt,
 		&i.ExpiresAt,
 	)
 	return i, err
+}
+
+const deactivateEmailVertifyByID = `-- name: DeactivateEmailVertifyByID :exec
+UPDATE email_vertify 
+SET is_valid = FALSE 
+WHERE id = $1 
+AND is_valid = TRUE
+`
+
+func (q *Queries) DeactivateEmailVertifyByID(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, deactivateEmailVertifyByID, id)
+	return err
 }
 
 const deleteEmailVertify = `-- name: DeleteEmailVertify :exec
@@ -53,7 +65,7 @@ func (q *Queries) DeleteEmailVertify(ctx context.Context, id string) error {
 }
 
 const getEmailVertify = `-- name: GetEmailVertify :one
-SELECT id, email, is_used, created_at, expires_at FROM email_vertify WHERE id = $1
+SELECT id, email, is_valid, created_at, expires_at FROM email_vertify WHERE id = $1
 `
 
 func (q *Queries) GetEmailVertify(ctx context.Context, id string) (EmailVertify, error) {
@@ -62,29 +74,59 @@ func (q *Queries) GetEmailVertify(ctx context.Context, id string) (EmailVertify,
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
-		&i.IsUsed,
+		&i.IsValid,
 		&i.CreatedAt,
 		&i.ExpiresAt,
 	)
 	return i, err
 }
 
+const getEmailVertifyByEmail = `-- name: GetEmailVertifyByEmail :many
+SELECT id, email, is_valid, created_at, expires_at FROM email_vertify WHERE email = $1
+`
+
+func (q *Queries) GetEmailVertifyByEmail(ctx context.Context, email string) ([]EmailVertify, error) {
+	rows, err := q.db.Query(ctx, getEmailVertifyByEmail, email)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []EmailVertify{}
+	for rows.Next() {
+		var i EmailVertify
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.IsValid,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateEmailVertify = `-- name: UpdateEmailVertify :one
-UPDATE email_vertify SET is_used = $2 WHERE id = $1 RETURNING id, email, is_used, created_at, expires_at
+UPDATE email_vertify SET is_valid = $2 WHERE id = $1 RETURNING id, email, is_valid, created_at, expires_at
 `
 
 type UpdateEmailVertifyParams struct {
-	ID     string `json:"id"`
-	IsUsed bool   `json:"is_used"`
+	ID      string `json:"id"`
+	IsValid bool   `json:"is_valid"`
 }
 
 func (q *Queries) UpdateEmailVertify(ctx context.Context, arg UpdateEmailVertifyParams) (EmailVertify, error) {
-	row := q.db.QueryRow(ctx, updateEmailVertify, arg.ID, arg.IsUsed)
+	row := q.db.QueryRow(ctx, updateEmailVertify, arg.ID, arg.IsValid)
 	var i EmailVertify
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
-		&i.IsUsed,
+		&i.IsValid,
 		&i.CreatedAt,
 		&i.ExpiresAt,
 	)

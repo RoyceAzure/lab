@@ -44,3 +44,18 @@ type GoogleLoginDTO struct {
 type RefreshTokenDTO struct {
 	RefreshToken string `json:"refresh_token"`
 }
+
+type CreateVertifyUserEmailLinkDTO struct {
+	Email string `json:"email"`
+}
+
+type LinkedUserAccountAndPasswordDTO struct {
+	Account  string `json:"account"`
+	Password string `json:"password"`
+	Email    string `json:"email"`
+}
+
+type AccountAndPasswordLoginDTO struct {
+	Account  string `json:"account"`  //帳號
+	Password string `json:"password"` //密碼明文
+}

@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS "user_sessions"  (
 CREATE TABLE IF NOT EXISTS "email_vertify"  (
     id VARCHAR(30) PRIMARY KEY NOT NULL,
     email VARCHAR(255) NOT NULL,
-    is_used BOOLEAN NOT NULL DEFAULT FALSE,
+    is_valid BOOLEAN NOT NULL DEFAULT FALSE,
     created_at timestamptz  NOT NULL,
     expires_at timestamptz NOT NULL
 );

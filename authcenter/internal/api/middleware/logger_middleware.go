@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/RoyceAzure/lab/authcenter/internal/constants"
 	"github.com/RoyceAzure/lab/authcenter/internal/util"
@@ -60,7 +61,8 @@ func LoggerMiddleware(logger *zerolog.Logger) func(next http.Handler) http.Handl
 			payload := getPayload(r)
 
 			if logger == nil {
-				logger = &zerolog.Logger{}
+				temp := zerolog.New(os.Stdout).With().Timestamp().Logger()
+				logger = &temp
 			}
 
 			logger.Info().

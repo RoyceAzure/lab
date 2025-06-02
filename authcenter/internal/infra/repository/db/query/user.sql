@@ -13,6 +13,9 @@ SELECT * FROM users WHERE id = $1;
 -- name: GetUserByEmail :one
 SELECT * FROM users WHERE email = $1;
 
+-- name: GetUserByAccountAndPassword :one
+SELECT * FROM users WHERE account = $1;
+
 -- name: GetUserByGoogleID :one
 SELECT * FROM users WHERE google_id = $1;
 
@@ -59,4 +62,4 @@ ON CONFLICT (email) DO NOTHING;
 -- name: UpdateUserAccountAndPassword :exec
 UPDATE users
 SET account = $2, password_hash = $3
-WHERE id = $1;
+WHERE email = $1;

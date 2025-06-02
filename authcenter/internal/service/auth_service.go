@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"reflect"
@@ -15,7 +16,6 @@ import (
 	"github.com/RoyceAzure/lab/authcenter/internal/model"
 	"github.com/RoyceAzure/lab/authcenter/internal/util"
 	"github.com/RoyceAzure/rj/api/token"
-	"github.com/RoyceAzure/rj/util/crypt"
 	pgutil "github.com/RoyceAzure/rj/util/pg_util"
 	"github.com/RoyceAzure/rj/util/random"
 	er "github.com/RoyceAzure/rj/util/rj_error"
@@ -38,6 +38,22 @@ type IAuthService interface {
 	//   - er.UnauthorizedCode 403: 使用者不合法
 	//   - 500: 用戶驗證、會話獲取或創建過程中的錯誤
 	AuthGoogleLogin(ctx context.Context, googleID string) (*model.LoginResponseModel, error)
+	// AccountAndPasswordLogin 處理帳號密碼登入認證並返回用戶登入資訊
+	//
+	// 參數:
+	//   - ctx: 上下文，包含請求相關資訊
+	//   - account: 帳號
+	//   - password: 密碼
+	//
+	// 返回值:
+	//   - *model.LoginResponseModel: 包含訪問令牌、刷新令牌和用戶資訊的響應模型
+	//   - error: 可能發生的錯誤
+	//
+	// 錯誤:
+	//   - er.UnauthenticatedCode 401: 帳號或密碼錯誤
+	//   - er.UnauthorizedCode 403: 使用者不合法
+	//   - 500: 用戶驗證、會話獲取或創建過程中的錯誤
+	AccountAndPasswordLogin(ctx context.Context, account, password string) (*model.LoginResponseModel, error)
 	// CheckUserValidate 驗證User合法性
 	//
 	// 參數:
@@ -102,6 +118,40 @@ type IAuthService interface {
 	//	  - er.InvalidArgumentCode 460: 如果提供的 userID 無效（小於 1）。
 	//	  - er.InternalErrorCode 500: 如果資料庫操作過程中發生錯誤。
 	GetUserPermissions(ctx context.Context, userID uuid.UUID) (bool, []model.PermissionModel, error)
+	// CreateVertifyUserEmailLink 使用者使用帳號密碼創建帳號時，需要先認證email。
+	// 參數:
+	//
+	//	ctx context.Context: 操作的上下文，允許取消和設定超時。
+	//	email string: 要認證的email。
+	//
+	// 返回值：
+	//   - er.InternalErrorCode 500: 如果資料庫操作過程中發生錯誤。
+	CreateVertifyUserEmailLink(ctx context.Context, email string) error
+	// VertifyUserEmailLink 驗證使用者email連結
+	// 參數:
+	//
+	//	ctx context.Context: 操作的上下文，允許取消和設定超時。
+	//	linkCode string: 要驗證的連結代碼。
+	//
+	// 返回值：
+	//
+	//	error: 操作過程中遇到的錯誤。可能的錯誤包括：
+	//		- er.NotFoundCode 404: 找不到連結代碼。
+	//		- er.InvalidOperationCode 405: 連結代碼已過期。
+	//		- er.InvalidOperationCode 405: 連結代碼已使用。
+	//	    - er.InternalErrorCode 500: 如果資料庫操作過程中發生錯誤。
+	VertifyUserEmailLink(ctx context.Context, linkCode string) error
+	// LinkUserAccountAndPas 將使用者帳號密碼綁定到以驗證email
+	// 必須先驗證過email，驗證過後，db會已經存在該使用者email資訊，且是起用狀態
+	//
+	// 參數：
+	//
+	//	userModel *model.CreateUserByAccountAndPasModel: 要創建的使用者資訊
+	//	error: 操作過程中遇到的錯誤。可能的錯誤包括：
+	//	  - er.InternalErrorCode 500: 如果資料庫操作過程中發生錯誤。
+	//	  - er.NotFoundCode 404: email不存在
+	//	  - er.InvalidOperationCode 464: email未驗證
+	LinkUserAccountAndPas(ctx context.Context, userModel *model.CreateUserByAccountAndPasModel) error
 }
 
 type AuthService struct {
@@ -150,6 +200,7 @@ func NewAuthService(dbDao db.IStore, userService IUserService, sessionService IS
 }
 
 // AuthGoogleLogin 處理Google登入認證並返回用戶登入資訊
+// 若用戶不存在，則會自動創建用戶
 //
 // 參數:
 //   - ctx: 上下文，包含請求相關資訊
@@ -170,11 +221,81 @@ func (a *AuthService) AuthGoogleLogin(ctx context.Context, googleID string) (*mo
 		return nil, er.New(er.UnauthenticatedCode, err.Error())
 	}
 
+	userExists, err := a.userService.CheckUserExistsByEmail(ctx, authUserInfo.Email)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, er.New(er.InternalErrorCode, err.Error())
+	}
+
+	if !userExists {
+		//創建user
+		err = a.userService.CreateUserWithRole(ctx, &model.CreateUserWithRoleModel{
+			ID:       uuid.New(),
+			Email:    authUserInfo.Email,
+			IsAdmin:  false,
+			IsActive: true,
+			RoleID:   3,
+		})
+		if err != nil {
+			return nil, er.New(er.InternalErrorCode, "create user failed")
+		}
+	}
+
 	userModel, err := a.CheckUserValidate(ctx, authUserInfo.Email)
 	if err != nil {
 		return nil, er.New(er.UnauthorizedCode, err.Error())
 	}
 
+	userSession, err := a.sessionLoginHelper(ctx, userModel)
+	if err != nil {
+		return nil, err
+	}
+
+	return &model.LoginResponseModel{
+		AccessToken:  userSession.AccessToken,
+		RefreshToken: userSession.RefreshToken,
+		User:         *userModel,
+	}, nil
+}
+
+// AccountAndPasswordLogin 處理帳號密碼登入認證並返回用戶登入資訊
+//
+// 參數:
+//   - ctx: 上下文，包含請求相關資訊
+//   - account: 帳號
+//   - password: 密碼明文
+//
+// 返回值:
+//   - *model.LoginResponseModel: 包含訪問令牌、刷新令牌和用戶資訊的響應模型
+//   - error: 可能發生的錯誤
+//
+// 錯誤:
+//   - er.UnauthenticatedCode 401: 帳號或密碼錯誤
+//   - er.UnauthorizedCode 403: 使用者不合法
+//   - 500: 用戶驗證、會話獲取或創建過程中的錯誤
+func (a *AuthService) AccountAndPasswordLogin(ctx context.Context, account, password string) (*model.LoginResponseModel, error) {
+	userModel, err := a.userService.GetUserByAccountAndPassword(ctx, account, password)
+	if err != nil {
+		return nil, err
+	}
+
+	if !userModel.IsActive {
+		return nil, er.New(er.UnauthorizedCode, "user is not active")
+	}
+
+	userSession, err := a.sessionLoginHelper(ctx, userModel)
+	if err != nil {
+		return nil, err
+	}
+
+	return &model.LoginResponseModel{
+		AccessToken:  userSession.AccessToken,
+		RefreshToken: userSession.RefreshToken,
+		User:         *userModel,
+	}, nil
+}
+
+// sessionLoginHelper 輔助函數，用於處理用戶登入過程中的會話管理
+func (a *AuthService) sessionLoginHelper(ctx context.Context, userModel *model.UserModel) (*model.UserSession, error) {
 	//取得用戶額外資訊
 	deviceInfo := util.GetDeviceInfoFromContext(ctx)
 
@@ -190,11 +311,7 @@ func (a *AuthService) AuthGoogleLogin(ctx context.Context, googleID string) (*mo
 		userSession = newSession
 	}
 
-	return &model.LoginResponseModel{
-		AccessToken:  userSession.AccessToken,
-		RefreshToken: userSession.RefreshToken,
-		User:         *userModel,
-	}, nil
+	return userSession, nil
 }
 
 // CheckUserValidate 驗證User合法性
@@ -460,42 +577,36 @@ func (authService *AuthService) createdUserSession(ctx context.Context, user mod
 	return userSession, nil
 }
 
-// CreateUserByAccountAndPas 使用者使用帳號密碼創建帳號
+// LinkUserAccountAndPas 使用者使用帳號密碼創建帳號
 // 必須先驗證過email，驗證過後，db會已經存在該使用者email資訊，且是起用狀態
 //
 // 參數：
 //
-//	ctx context.Context: 操作的上下文，允許取消和設定超時。
-//	userID int32: 要檢索權限的使用者 ID。
-//
-// 返回值：
-//
-//	model.CreateUserByAccountAndPasResult:
-//		ResultCode int32:
-//		0: 成功
-//		1: email已經存在，需要執行帳戶連結，返回讓用戶確認是否連結
-//		UserModel  UserModel
+//	userModel *model.CreateUserByAccountAndPasModel: 要創建的使用者資訊
 //	error: 操作過程中遇到的錯誤。可能的錯誤包括：
-//	  - er.InvalidArgumentCode 460: 如果提供的 userID 無效（小於 1）。
 //	  - er.InternalErrorCode 500: 如果資料庫操作過程中發生錯誤。
-func (a *AuthService) CreateUserByAccountAndPas(ctx context.Context, userModel *model.CreateUserByAccountAndPasModel) error {
+//	  - er.NotFoundCode 404: email不存在
+//	  - er.InvalidOperationCode 464: email未驗證
+func (a *AuthService) LinkUserAccountAndPas(ctx context.Context, userModel *model.CreateUserByAccountAndPasModel) error {
 	//已經驗證過email, email就必定會存在
 	user, err := a.userService.GetUserByEmail(ctx, userModel.Email)
 	if err != nil {
-		return err
+		return er.New(er.InternalErrorCode, err.Error())
+	}
+
+	if user == nil {
+		return er.New(er.InvalidOperationCode, "email not exists")
 	}
 
 	if !user.IsActive {
-		return er.New(er.InternalErrorCode, "user is not active")
+		return er.New(er.InvalidOperationCode, "email not vaildate yet")
 	}
 
-	hashPassword, err := crypt.HashPassword(userModel.Password)
-	if err != nil {
-		return er.New(er.InternalErrorCode, "hash password failed")
+	if user.Account != nil || user.HashPassword != nil {
+		return er.New(er.InvalidOperationCode, "email already linked with account and password")
 	}
-
 	//update user
-	err = a.userService.UpdateUserAccountAndPassword(ctx, user.ID, userModel.Account, hashPassword)
+	err = a.userService.UpdateUserAccountAndPassword(ctx, user.Email, userModel.Account, userModel.Password)
 	if err != nil {
 		return err
 	}
@@ -503,12 +614,37 @@ func (a *AuthService) CreateUserByAccountAndPas(ctx context.Context, userModel *
 	return nil
 }
 
-func getVertifyEmailLink(linkCode string) string {
-	return fmt.Sprintf("%s/auth/vertify-email?code=%s", config.GetConfig().AuthCenterUrl, linkCode)
+// 組合api端點link
+func getApiLink(linkCode string) string {
+	return fmt.Sprintf("%s/api/v1/auth/vertify-email?code=%s", config.GetConfig().AuthCenterUrl, linkCode)
 }
 
 // CreateVertifyUserEmailLink 使用者使用帳號密碼創建帳號時，需要先認證email。
+// 參數:
+//
+//	ctx context.Context: 操作的上下文，允許取消和設定超時。
+//	email string: 要認證的email。
+//
+// 返回值：
+//   - er.InternalErrorCode 500: 如果資料庫操作過程中發生錯誤。
 func (a *AuthService) CreateVertifyUserEmailLink(ctx context.Context, email string) error {
+	//檢查email是否已經存在
+	user, _ := a.userService.GetUserByEmail(ctx, email)
+	if user != nil {
+		//資安問題， 如果email已經存在，不執行任何動作，假裝成功
+		return nil
+	}
+
+	//如果該email已經有email_vertify資料，則deactivate所有email_vertify資料
+	emailVertify, err := a.dbDao.GetEmailVertifyByEmail(ctx, email)
+	if err != nil {
+		return er.New(er.InternalErrorCode, "get email vertify failed")
+	}
+
+	for _, v := range emailVertify {
+		_ = a.dbDao.DeactivateEmailVertifyByID(ctx, v.ID)
+	}
+
 	//要發送email認證信， 使用者點擊後就要做帳戶連結
 	//將當前要創建使用者的資訊存入db, 前端回傳相關api 網址 到使用者email 讓使用者點擊後做帳戶連結
 	randomLinkString := random.RandomString(25)
@@ -518,7 +654,7 @@ func (a *AuthService) CreateVertifyUserEmailLink(ctx context.Context, email stri
 		ID:        randomLinkString,
 		Email:     email,
 		ExpiresAt: time.Now().UTC().Add(time.Minute * 10),
-		IsUsed:    false,
+		IsValid:   true,
 		CreatedAt: time.Now().UTC(),
 	})
 	if err != nil {
@@ -526,17 +662,19 @@ func (a *AuthService) CreateVertifyUserEmailLink(ctx context.Context, email stri
 	}
 
 	//組合email link
-	link := getVertifyEmailLink(emailLink.ID)
+	link := getApiLink(emailLink.ID)
 	//發送email認證信
 	//todo 需要email template
-	err = a.mailService.SendVertifyEmail(ctx, &model.MailContent{
-		Subject: "Email Verification",
-		Content: link,
-		To:      []string{email},
+	err = a.mailService.SendVertifyEmail(ctx, EmailVerificationData{
+		Email:           email,
+		CompanyName:     "authcenter",
+		SupportEmail:    "authcenter@gmail.com",
+		VerificationURL: link,
+		ExpiryMinutes:   10,
 	})
 	if err != nil {
 		a.dbDao.DeleteEmailVertify(ctx, emailLink.ID)
-		return er.New(er.InternalErrorCode, "send email vertify failed")
+		return er.New(er.InternalErrorCode, err.Error())
 	}
 
 	return nil
@@ -562,14 +700,15 @@ func (a *AuthService) VertifyUserEmailLink(ctx context.Context, linkCode string)
 		return er.New(er.NotFoundCode, "email vertify link not found")
 	}
 	//檢查linkCode是否過期
-	if emailVertify.ExpiresAt.Before(time.Now()) {
+	if emailVertify.ExpiresAt.Before(time.Now().UTC()) {
 		return er.New(er.InvalidOperationCode, "email vertify link expired")
 	}
-	//檢查linkCode是否被使用
-	if emailVertify.IsUsed {
+	//檢查linkCode是否合法
+	if !emailVertify.IsValid {
 		return er.New(er.InvalidOperationCode, "email vertify link already used")
 	}
-	//如果以上都沒有問題，則將linkCode對應的email取出
+	//如果以上都沒有問題，則將linkCode對應的email取出3
+	//確認user不存在
 	user, err := a.userService.GetUserByEmail(ctx, emailVertify.Email)
 	if err != nil {
 		if _, ok := err.(*er.AnaError); !ok {
@@ -581,21 +720,23 @@ func (a *AuthService) VertifyUserEmailLink(ctx context.Context, linkCode string)
 	}
 
 	if user == nil {
-		user = &model.UserModel{
+		err = a.userService.CreateUserWithRole(ctx, &model.CreateUserWithRoleModel{
 			ID:        uuid.New(),
 			Email:     emailVertify.Email,
+			IsAdmin:   false,
 			IsActive:  true,
+			RoleID:    3,
 			CreatedAt: time.Now().UTC(),
-		}
-		_, err = a.userService.CreateUser(ctx, user)
+		})
 		if err != nil {
 			return err
 		}
 	}
 
-	err = a.userService.ActiveUser(ctx, user.ID)
+	// 刪除email_vertify資料
+	err = a.dbDao.DeleteEmailVertify(ctx, emailVertify.ID)
 	if err != nil {
-		return err
+		return er.New(er.InternalErrorCode, "delete email vertify failed")
 	}
 
 	return nil

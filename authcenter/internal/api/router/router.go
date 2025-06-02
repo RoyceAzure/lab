@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/RoyceAzure/lab/authcenter/api"
-	m "github.com/RoyceAzure/lab/authcenter/api/middleware"
 	_ "github.com/RoyceAzure/lab/authcenter/docs"
+	"github.com/RoyceAzure/lab/authcenter/internal/api"
+	m "github.com/RoyceAzure/lab/authcenter/internal/api/middleware"
 	"github.com/RoyceAzure/rj/api/token"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -45,10 +45,13 @@ func SetupRouter(server *api.Server, tokenMaker token.Maker[uuid.UUID], logger *
 		//Auth相關路由
 		r.Group(func(r chi.Router) {
 			r.Route("/auth", func(r chi.Router) {
-				r.Post("/google", server.AuthHandler.GoogleLogin)
+				r.Post("/login/google", server.AuthHandler.GoogleLogin)
+				r.Post("/login/account", server.AuthHandler.AccountAndPasswordLogin)
 				r.Post("/refresh-token", server.AuthHandler.ReNewToken)
 				r.Post("/logout", server.AuthHandler.LogOut)
-
+				r.Post("/create-vertify-email", server.AuthHandler.CreateVertifyUserEmailLink)
+				r.Get("/vertify-email", server.AuthHandler.VertifyUserEmailLink)
+				r.Post("/linkedUser", server.AuthHandler.LinkedUserAccountAndPassword)
 				r.With(m.AuthMiddleware).Get("/me", server.AuthHandler.Me)
 				r.With(m.AuthMiddleware).Get("/permissions", server.AuthHandler.Permissions)
 			})

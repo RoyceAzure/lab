@@ -1,6 +1,6 @@
 package api
 
-import "github.com/RoyceAzure/lab/authcenter/api/handler"
+import "github.com/RoyceAzure/lab/authcenter/internal/api/handler"
 
 type Server struct {
 	AuthHandler *handler.AuthHandler

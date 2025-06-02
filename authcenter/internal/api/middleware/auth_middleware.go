@@ -50,7 +50,7 @@ func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, ok := r.Context().Value(constants.AuthorizationPayloadKey).(*token.Payload[uuid.UUID])
 		if !ok {
-			api.ErrorJSON(w, int(er.UnauthenticatedCode), er.New(er.UnauthenticatedCode, "unauthorized"), er.ErrStrMap[er.UnauthenticatedCode])
+			api.ErrorJSON(w, int(er.UnauthenticatedCode), er.New(er.UnauthenticatedCode, "unauthenticated"), er.ErrStrMap[er.UnauthenticatedCode])
 			return
 		}
 		next.ServeHTTP(w, r)

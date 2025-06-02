@@ -37,8 +37,6 @@ type Config struct {
 	GrpcPort           string `mapstructure:"GRPC_PORT"`
 	GoogleClientID     string `mapstructure:"GOOGLE_CLIENT_ID"`
 	GoogleClientSecret string `mapstructure:"GOOGLE_CLIENT_SECRET"`
-	MigrateUrl         string `mapstructure:"MIGRATE_URL"`
-	PermissionFilePath string `mapstructure:"PERMISSION_FILE_PATH"`
 	AuthTokenKey       string `mapstructure:"AUTH_TOKEN_KEY"`
 	SmtpAuthKey        string `mapstructure:"SMTP_AUTH_KEY"`
 	EmailAccount       string `mapstructure:"EMAIL_ACCOUNT"`

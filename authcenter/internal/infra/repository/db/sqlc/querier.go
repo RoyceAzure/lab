@@ -27,6 +27,7 @@ type Querier interface {
 	CreateUserRoleIfNotExists(ctx context.Context, arg CreateUserRoleIfNotExistsParams) error
 	DeActiveUser(ctx context.Context, id pgtype.UUID) error
 	DeActiveUserAdmin(ctx context.Context, id pgtype.UUID) error
+	DeactivateEmailVertifyByID(ctx context.Context, id string) error
 	DeleteEmailVertify(ctx context.Context, id string) error
 	DeleteExpiredSessions(ctx context.Context) error
 	DeletePermission(ctx context.Context, id int32) error
@@ -35,6 +36,7 @@ type Querier interface {
 	DeleteUser(ctx context.Context, id pgtype.UUID) error
 	ForceClearAllSessions(ctx context.Context) error
 	GetEmailVertify(ctx context.Context, id string) (EmailVertify, error)
+	GetEmailVertifyByEmail(ctx context.Context, email string) ([]EmailVertify, error)
 	GetPermissionByID(ctx context.Context, id int32) (Permission, error)
 	GetPermissionByName(ctx context.Context, name string) (Permission, error)
 	GetRoleByID(ctx context.Context, id int32) (Role, error)
@@ -45,6 +47,7 @@ type Querier interface {
 	GetSessionByRefreshToken(ctx context.Context, refreshToken string) (UserSession, error)
 	GetSessionByRequestInfo(ctx context.Context, arg GetSessionByRequestInfoParams) (UserSession, error)
 	GetUserByAccount(ctx context.Context, account pgtype.Text) (User, error)
+	GetUserByAccountAndPassword(ctx context.Context, account pgtype.Text) (User, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByGoogleID(ctx context.Context, googleID pgtype.Text) (User, error)
 	GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)

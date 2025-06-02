@@ -10,9 +10,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/RoyceAzure/lab/authcenter/api"
-	"github.com/RoyceAzure/lab/authcenter/api/handler"
-	"github.com/RoyceAzure/lab/authcenter/api/router"
+	"github.com/RoyceAzure/lab/authcenter/internal/api"
+	"github.com/RoyceAzure/lab/authcenter/internal/api/handler"
+	"github.com/RoyceAzure/lab/authcenter/internal/api/router"
 	"github.com/RoyceAzure/lab/authcenter/internal/appcontext"
 	"github.com/RoyceAzure/lab/authcenter/internal/config"
 )

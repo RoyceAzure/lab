@@ -182,6 +182,30 @@ func (q *Queries) GetUserByAccount(ctx context.Context, account pgtype.Text) (Us
 	return i, err
 }
 
+const getUserByAccountAndPassword = `-- name: GetUserByAccountAndPassword :one
+SELECT id, google_id, facebook_id, email, account, password_hash, name, is_admin, is_active, line_user_id, line_linked_at, created_at FROM users WHERE account = $1
+`
+
+func (q *Queries) GetUserByAccountAndPassword(ctx context.Context, account pgtype.Text) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByAccountAndPassword, account)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.GoogleID,
+		&i.FacebookID,
+		&i.Email,
+		&i.Account,
+		&i.PasswordHash,
+		&i.Name,
+		&i.IsAdmin,
+		&i.IsActive,
+		&i.LineUserID,
+		&i.LineLinkedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id, google_id, facebook_id, email, account, password_hash, name, is_admin, is_active, line_user_id, line_linked_at, created_at FROM users WHERE email = $1
 `
@@ -342,16 +366,16 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 const updateUserAccountAndPassword = `-- name: UpdateUserAccountAndPassword :exec
 UPDATE users
 SET account = $2, password_hash = $3
-WHERE id = $1
+WHERE email = $1
 `
 
 type UpdateUserAccountAndPasswordParams struct {
-	ID           pgtype.UUID `json:"id"`
+	Email        string      `json:"email"`
 	Account      pgtype.Text `json:"account"`
 	PasswordHash pgtype.Text `json:"password_hash"`
 }
 
 func (q *Queries) UpdateUserAccountAndPassword(ctx context.Context, arg UpdateUserAccountAndPasswordParams) error {
-	_, err := q.db.Exec(ctx, updateUserAccountAndPassword, arg.ID, arg.Account, arg.PasswordHash)
+	_, err := q.db.Exec(ctx, updateUserAccountAndPassword, arg.Email, arg.Account, arg.PasswordHash)
 	return err
 }

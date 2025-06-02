@@ -14,7 +14,7 @@ import (
 type EmailVertify struct {
 	ID        string    `json:"id"`
 	Email     string    `json:"email"`
-	IsUsed    bool      `json:"is_used"`
+	IsValid   bool      `json:"is_valid"`
 	CreatedAt time.Time `json:"created_at"`
 	ExpiresAt time.Time `json:"expires_at"`
 }

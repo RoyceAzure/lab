@@ -12,8 +12,8 @@ import (
 	"github.com/RoyceAzure/lab/authcenter/internal/infra/repository/db"
 	"github.com/RoyceAzure/lab/authcenter/internal/infra/repository/db/sqlc"
 	"github.com/RoyceAzure/lab/authcenter/internal/service"
+	"github.com/RoyceAzure/lab/authcenter/internal/util"
 	"github.com/RoyceAzure/rj/api/token"
-	pgutil "github.com/RoyceAzure/rj/util/pg_util"
 	util_http "github.com/RoyceAzure/rj/util/rj_http"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4"
@@ -100,10 +100,10 @@ func (app *ApplicationContext) Init() error {
 	if err != nil {
 		return err
 	}
-	err = app.dbInit()
-	if err != nil {
-		return err
-	}
+	// err = app.dbInit()
+	// if err != nil {
+	// 	return err
+	// }
 
 	//強制清空所有user session  for server意外關閉情況
 	log.Printf("force cleanning all user session...")
@@ -249,7 +249,7 @@ func trimLeadingSlash(path string) string {
 func (app *ApplicationContext) dbInit() error {
 	log.Printf("Start setup db init")
 
-	migrateUrl := trimLeadingSlash(app.Cf.MigrateUrl)
+	migrateUrl := trimLeadingSlash("internal/infra/repository/db/migrations")
 	err := runDBMigration(
 		fmt.Sprintf("file://%s", migrateUrl),
 		fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", app.Cf.DbUser, app.Cf.DbPas, app.Cf.DbHost, app.Cf.DbPort, app.Cf.DbName),
@@ -261,7 +261,7 @@ func (app *ApplicationContext) dbInit() error {
 
 	ctx := context.Background()
 	//db data init
-	perCf, err := config.LoadPermissionConfig(app.Cf.PermissionFilePath)
+	perCf, err := config.LoadPermissionConfig(fmt.Sprintf("%s/docs/permission.yaml", util.GetProjectRoot("github.com/RoyceAzure/lab/authcenter")))
 	if err != nil {
 		return err
 	}
@@ -308,27 +308,27 @@ func (app *ApplicationContext) dbInit() error {
 
 	var setUserAndRole = func(repo *sqlc.Queries) error {
 		//create super admin user
-		name := "royce"
-		adminID := pgutil.UUIDToPgUUIDV5(uuid.New())
-		err := repo.CreateUserIfNotExists(ctx, sqlc.CreateUserIfNotExistsParams{
-			ID:        adminID,
-			Email:     "roycewnag@gmail.com",
-			Name:      pgutil.StringToPgTextV5(&name),
-			CreatedAt: time.Now().UTC(),
-			IsAdmin:   true,
-			IsActive:  true,
-		})
-		if err != nil {
-			return err
-		}
+		// name := "royce"
+		// adminID := pgutil.UUIDToPgUUIDV5(uuid.New())
+		// err := repo.CreateUserIfNotExists(ctx, sqlc.CreateUserIfNotExistsParams{
+		// 	ID:        adminID,
+		// 	Email:     "roycewnag@gmail.com",
+		// 	Name:      pgutil.StringToPgTextV5(&name),
+		// 	CreatedAt: time.Now().UTC(),
+		// 	IsAdmin:   true,
+		// 	IsActive:  true,
+		// })
+		// if err != nil {
+		// 	return err
+		// }
 
-		err = repo.CreateUserRoleIfNotExists(ctx, sqlc.CreateUserRoleIfNotExistsParams{
-			UserID: adminID,
-			RoleID: 1,
-		})
-		if err != nil {
-			return err
-		}
+		// err = repo.CreateUserRoleIfNotExists(ctx, sqlc.CreateUserRoleIfNotExistsParams{
+		// 	UserID: adminID,
+		// 	RoleID: 1,
+		// })
+		// if err != nil {
+		// 	return err
+		// }
 
 		return nil
 	}

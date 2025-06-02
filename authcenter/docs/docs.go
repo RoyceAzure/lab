@@ -24,7 +24,268 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/auth/google": {
+        "/auth/create-vertify-email": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Register"
+                ],
+                "summary": "創建email認證連結",
+                "parameters": [
+                    {
+                        "description": "email",
+                        "name": "email",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_internal_api_dto.CreateVertifyUserEmailLinkDTO"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "UnauthenticatedCode",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.ResponseError"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "460": {
+                        "description": "InvalidArgumentCode",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.ResponseError"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.ResponseError"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/linkedUser": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Register"
+                ],
+                "summary": "使用帳號密碼連結email，必須要先認證email",
+                "parameters": [
+                    {
+                        "description": "account info",
+                        "name": "accountInfo",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_internal_api_dto.LinkedUserAccountAndPasswordDTO"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.ResponseError"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/login/account": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "account and password login",
+                "parameters": [
+                    {
+                        "description": "account and password",
+                        "name": "accountInfo",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_internal_api_dto.AccountAndPasswordLoginDTO"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_internal_api_dto.LoginResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "UnauthenticatedCode",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.ResponseError"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "UnauthorizedCode",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.ResponseError"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.ResponseError"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/login/google": {
             "post": {
                 "consumes": [
                     "application/json"
@@ -43,7 +304,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_api_dto.GoogleLoginDTO"
+                            "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_internal_api_dto.GoogleLoginDTO"
                         }
                     }
                 ],
@@ -59,7 +320,7 @@ const docTemplate = `{
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_api_dto.LoginResponse"
+                                            "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_internal_api_dto.LoginResponse"
                                         }
                                     }
                                 }
@@ -142,7 +403,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_api_dto.RefreshTokenDTO"
+                            "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_internal_api_dto.RefreshTokenDTO"
                         }
                     }
                 ],
@@ -251,7 +512,7 @@ const docTemplate = `{
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_api_dto.UserDTO"
+                                            "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_internal_api_dto.UserDTO"
                                         }
                                     }
                                 }
@@ -326,7 +587,7 @@ const docTemplate = `{
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_api_dto.UserPermissionsDTO"
+                                            "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_internal_api_dto.UserPermissionsDTO"
                                         }
                                     }
                                 }
@@ -409,7 +670,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_api_dto.RefreshTokenDTO"
+                            "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_internal_api_dto.RefreshTokenDTO"
                         }
                     }
                 ],
@@ -425,7 +686,7 @@ const docTemplate = `{
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_api_dto.TokenInfo"
+                                            "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_internal_api_dto.TokenInfo"
                                         }
                                     }
                                 }
@@ -452,6 +713,103 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "UnauthorizedCode",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.ResponseError"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.ResponseError"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/vertify-email": {
+            "get": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Register"
+                ],
+                "summary": "驗證email認證連結",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "code",
+                        "name": "code",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "UnauthenticatedCode",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.ResponseError"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "460": {
+                        "description": "InvalidArgumentCode",
                         "schema": {
                             "allOf": [
                                 {
@@ -536,7 +894,28 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_RoyceAzure_lab_authcenter_api_dto.GoogleLoginDTO": {
+        "github_com_RoyceAzure_lab_authcenter_internal_api_dto.AccountAndPasswordLoginDTO": {
+            "type": "object",
+            "properties": {
+                "account": {
+                    "description": "帳號",
+                    "type": "string"
+                },
+                "password": {
+                    "description": "密碼明文",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_RoyceAzure_lab_authcenter_internal_api_dto.CreateVertifyUserEmailLinkDTO": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_RoyceAzure_lab_authcenter_internal_api_dto.GoogleLoginDTO": {
             "type": "object",
             "properties": {
                 "id_token": {
@@ -544,21 +923,35 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_RoyceAzure_lab_authcenter_api_dto.LoginResponse": {
+        "github_com_RoyceAzure_lab_authcenter_internal_api_dto.LinkedUserAccountAndPasswordDTO": {
             "type": "object",
             "properties": {
-                "access_token": {
-                    "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_api_dto.TokenInfo"
+                "account": {
+                    "type": "string"
                 },
-                "refresh_token": {
-                    "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_api_dto.TokenInfo"
+                "email": {
+                    "type": "string"
                 },
-                "user": {
-                    "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_api_dto.UserDTO"
+                "password": {
+                    "type": "string"
                 }
             }
         },
-        "github_com_RoyceAzure_lab_authcenter_api_dto.PermissionsDTO": {
+        "github_com_RoyceAzure_lab_authcenter_internal_api_dto.LoginResponse": {
+            "type": "object",
+            "properties": {
+                "access_token": {
+                    "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_internal_api_dto.TokenInfo"
+                },
+                "refresh_token": {
+                    "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_internal_api_dto.TokenInfo"
+                },
+                "user": {
+                    "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_internal_api_dto.UserDTO"
+                }
+            }
+        },
+        "github_com_RoyceAzure_lab_authcenter_internal_api_dto.PermissionsDTO": {
             "type": "object",
             "properties": {
                 "actions": {
@@ -572,7 +965,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_RoyceAzure_lab_authcenter_api_dto.RefreshTokenDTO": {
+        "github_com_RoyceAzure_lab_authcenter_internal_api_dto.RefreshTokenDTO": {
             "type": "object",
             "properties": {
                 "refresh_token": {
@@ -580,7 +973,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_RoyceAzure_lab_authcenter_api_dto.TokenInfo": {
+        "github_com_RoyceAzure_lab_authcenter_internal_api_dto.TokenInfo": {
             "type": "object",
             "properties": {
                 "expires_in": {
@@ -591,7 +984,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_RoyceAzure_lab_authcenter_api_dto.UserDTO": {
+        "github_com_RoyceAzure_lab_authcenter_internal_api_dto.UserDTO": {
             "type": "object",
             "properties": {
                 "account": {
@@ -623,7 +1016,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_RoyceAzure_lab_authcenter_api_dto.UserPermissionsDTO": {
+        "github_com_RoyceAzure_lab_authcenter_internal_api_dto.UserPermissionsDTO": {
             "type": "object",
             "properties": {
                 "is_admin": {
@@ -632,7 +1025,7 @@ const docTemplate = `{
                 "resource": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_api_dto.PermissionsDTO"
+                        "$ref": "#/definitions/github_com_RoyceAzure_lab_authcenter_internal_api_dto.PermissionsDTO"
                     }
                 }
             }
@@ -658,6 +1051,8 @@ var SwaggerInfo = &swag.Spec{
 	Description:      "通用認證中心",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
+	LeftDelim:        "{{",
+	RightDelim:       "}}",
 }
 
 func init() {

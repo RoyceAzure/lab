@@ -50,3 +50,12 @@ type UpdateUserModel struct {
 	LineUserID   *string
 	LineLinkedAt *string
 }
+
+type CreateUserWithRoleModel struct {
+	ID        uuid.UUID
+	Email     string
+	IsAdmin   bool
+	IsActive  bool
+	RoleID    int32
+	CreatedAt time.Time
+}
