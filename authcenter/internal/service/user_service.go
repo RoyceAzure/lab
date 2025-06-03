@@ -17,7 +17,24 @@ import (
 type IUserService interface {
 	GetUserByEmail(ctx context.Context, email string) (*model.UserModel, error)
 	UpdateUserAccountAndPassword(ctx context.Context, email string, account string, password string) error
+	// DeactivateUser 停用用戶
+	// 如果用戶不存在，會有404錯誤
+	// 參數:
+	//   - ctx: 上下文
+	//   - id: 用戶ID
+	//
+	// 錯誤:
+	//   - er.InternalErrorCode 500: 內部處理錯誤
 	ActiveUser(ctx context.Context, id uuid.UUID) error
+	// DeactivateUser 停用用戶
+	// 如果用戶不存在，err會返回nil
+	// 參數:
+	//   - ctx: 上下文
+	//   - id: 用戶ID
+	//
+	// 錯誤:
+	//   - er.InternalErrorCode 500: 內部處理錯誤
+	DeactivateUser(ctx context.Context, id uuid.UUID) error
 	CreateUser(ctx context.Context, arg *model.UserModel) (*model.UserModel, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (*model.UserModel, error)
 	// CreateUserWithRole 創建用戶並分配角色
@@ -131,10 +148,21 @@ func (u *UserService) CheckUserExists(ctx context.Context, id uuid.UUID) (bool, 
 	return true, nil
 }
 
+// ActiveUser 啟用用戶
+// 參數:
+//   - ctx: 上下文
+//   - id: 用戶ID
+//
+// 錯誤:
+//   - er.InternalErrorCode 500: 內部處理錯誤
+//   - er.NotFoundErrorCode 404: user不存在
 func (u *UserService) ActiveUser(ctx context.Context, id uuid.UUID) error {
 	err := u.dbDao.ActiveUser(ctx, pgutil.UUIDToPgUUIDV5(id))
 	if err != nil {
-		return err
+		if errors.Is(err, sql.ErrNoRows) {
+			return er.New(er.NotFoundCode, "user is not exists")
+		}
+		return er.New(er.InternalErrorCode, err.Error())
 	}
 	return nil
 }
@@ -318,4 +346,23 @@ func (u *UserService) GetUserByAccountAndPassword(ctx context.Context, account, 
 	}
 
 	return convertRepoUsertToModel(&userEntity), nil
+}
+
+// DeactivateUser 停用用戶
+// 如果用戶不存在，會有404錯誤
+// 參數:
+//   - ctx: 上下文
+//   - id: 用戶ID
+//
+// 錯誤:
+//   - er.InternalErrorCode 500: 內部處理錯誤
+func (u *UserService) DeactivateUser(ctx context.Context, id uuid.UUID) error {
+	err := u.dbDao.DeActiveUser(ctx, pgutil.UUIDToPgUUIDV5(id))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return er.New(er.InternalErrorCode, err.Error())
+	}
+	return nil
 }

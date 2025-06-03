@@ -4,15 +4,20 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"reflect"
 	"time"
 
+	"github.com/RoyceAzure/lab/authcenter/internal/api/middleware"
 	"github.com/RoyceAzure/lab/authcenter/internal/config"
 	"github.com/RoyceAzure/lab/authcenter/internal/infra/auth/google_auth"
 	"github.com/RoyceAzure/lab/authcenter/internal/infra/repository/db"
 	"github.com/RoyceAzure/lab/authcenter/internal/infra/repository/db/sqlc"
 	"github.com/RoyceAzure/lab/authcenter/internal/service"
 	"github.com/RoyceAzure/lab/authcenter/internal/util"
+	"github.com/RoyceAzure/lab/rj_redis/pkg/cache"
+	rj_redis "github.com/RoyceAzure/lab/rj_redis/pkg/cache/redis"
+	"github.com/RoyceAzure/lab/rj_redis/pkg/redis_client"
 	"github.com/RoyceAzure/rj/api/token"
 	util_http "github.com/RoyceAzure/rj/util/rj_http"
 	"github.com/golang-migrate/migrate/v4"
@@ -21,19 +26,25 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
+	"github.com/rs/zerolog"
 )
 
 type ApplicationContext struct {
-	HttpClient         *util_http.Client
-	DbConn             *pgxpool.Pool
-	DbDao              db.IStore
-	Cf                 *config.Config
-	TokenMaker         token.Maker[uuid.UUID]
-	GoogleAuthVerifier google_auth.IAuthVerifier
-	SessionService     service.ISessionService
-	UserService        service.IUserService
-	AuthService        service.IAuthService
-	MailService        service.IMailService
+	DbDao               db.IStore
+	HttpClient          *util_http.Client
+	DbConn              *pgxpool.Pool
+	RedisClient         *redis.Client
+	Cf                  *config.Config
+	Logger              *zerolog.Logger
+	TokenMaker          token.Maker[uuid.UUID]
+	GoogleAuthVerifier  google_auth.IAuthVerifier
+	SessionService      service.ISessionService
+	UserService         service.IUserService
+	AuthService         service.IAuthService
+	MailService         service.IMailService
+	Authorizer          middleware.IAuthorizer
+	BlackListRedisCache cache.Cache
 }
 
 func NewApplicationContext(cf *config.Config) (*ApplicationContext, error) {
@@ -96,6 +107,21 @@ func (app *ApplicationContext) Init() error {
 		return err
 	}
 
+	err = app.setUpRedisClient()
+	if err != nil {
+		return err
+	}
+
+	err = app.setUpLogger()
+	if err != nil {
+		return err
+	}
+
+	err = app.setUpBlackListRedisCache()
+	if err != nil {
+		return err
+	}
+
 	err = app.setUpAuthService()
 	if err != nil {
 		return err
@@ -104,6 +130,11 @@ func (app *ApplicationContext) Init() error {
 	// if err != nil {
 	// 	return err
 	// }
+
+	err = app.setUpAuthorizer()
+	if err != nil {
+		return err
+	}
 
 	//強制清空所有user session  for server意外關閉情況
 	log.Printf("force cleanning all user session...")
@@ -117,6 +148,17 @@ func (app *ApplicationContext) setUpHttpClient() error {
 	log.Printf("Start setup HTTP client")
 	app.HttpClient = util_http.NewHttpClient(util_http.WithTimeout(time.Second * 30))
 	log.Printf("Finish setup HTTP client")
+	return nil
+}
+
+func (app *ApplicationContext) setUpRedisClient() error {
+	log.Printf("Start setup redis client")
+	redisClient, err := redis_client.GetRedisClient(app.Cf.RedisAddr, redis_client.WithPassword(app.Cf.RedisPassword))
+	if err != nil {
+		return err
+	}
+	app.RedisClient = redisClient
+	log.Printf("Finish setup redis client")
 	return nil
 }
 
@@ -136,6 +178,14 @@ func (app *ApplicationContext) setUpdbDao() error {
 	log.Printf("Start setup database DAO")
 	app.DbDao = db.NewStore(app.DbConn)
 	log.Printf("Finish setup database DAO")
+	return nil
+}
+
+func (app *ApplicationContext) setUpLogger() error {
+	log.Printf("Start setup logger")
+	logger := zerolog.New(os.Stdout).Level(zerolog.DebugLevel)
+	app.Logger = &logger
+	log.Printf("Finish setup logger")
 	return nil
 }
 
@@ -169,8 +219,15 @@ func (app *ApplicationContext) setGoogleVerifier() error {
 
 func (app *ApplicationContext) setUpAuthService() error {
 	log.Printf("Start setup auth service")
-	app.AuthService = service.NewAuthService(app.DbDao, app.UserService, app.SessionService, app.MailService, app.TokenMaker, app.GoogleAuthVerifier)
+	app.AuthService = service.NewAuthService(app.DbDao, app.UserService, app.SessionService, app.MailService, app.TokenMaker, app.GoogleAuthVerifier, app.BlackListRedisCache)
 	log.Printf("Finish setup auth service")
+	return nil
+}
+
+func (app *ApplicationContext) setUpAuthorizer() error {
+	log.Printf("Start setup authorizer")
+	app.Authorizer = middleware.NewAuthorizor(app.TokenMaker, app.BlackListRedisCache)
+	log.Printf("Finish setup authorizer")
 	return nil
 }
 
@@ -184,6 +241,13 @@ func (app *ApplicationContext) setTokenMaker() error {
 
 	app.TokenMaker = tokenMaker
 	log.Printf("Finish setup token maker")
+	return nil
+}
+
+func (app *ApplicationContext) setUpBlackListRedisCache() error {
+	log.Printf("Start setup black list redis cache")
+	app.BlackListRedisCache = rj_redis.NewRedisCache(app.RedisClient, "black_list")
+	log.Printf("Finish setup black list redis cache")
 	return nil
 }
 

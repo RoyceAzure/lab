@@ -7,15 +7,13 @@ import (
 	_ "github.com/RoyceAzure/lab/authcenter/docs"
 	"github.com/RoyceAzure/lab/authcenter/internal/api"
 	m "github.com/RoyceAzure/lab/authcenter/internal/api/middleware"
-	"github.com/RoyceAzure/rj/api/token"
+	"github.com/RoyceAzure/lab/authcenter/internal/appcontext"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/google/uuid"
-	"github.com/rs/zerolog"
 	httpSwagger "github.com/swaggo/http-swagger"
 )
 
-func SetupRouter(server *api.Server, tokenMaker token.Maker[uuid.UUID], logger *zerolog.Logger) *chi.Mux {
+func SetupRouter(server *api.Server, appContext *appcontext.ApplicationContext) *chi.Mux {
 	r := chi.NewRouter()
 
 	// c := cors.New(cors.Options{
@@ -28,10 +26,10 @@ func SetupRouter(server *api.Server, tokenMaker token.Maker[uuid.UUID], logger *
 	// 全局中間件
 
 	r.Use(m.RequestIdMiddleware)
-	r.Use(m.AuthPayloadMiddleware(tokenMaker))
+	r.Use(appContext.Authorizer.AuthPayloadMiddlewareFunc())
 	r.Use(middleware.RealIP)
 	r.Use(m.DeviceInfoMiddleware)
-	r.Use(m.LoggerMiddleware(logger))
+	r.Use(m.LoggerMiddleware(appContext.Logger))
 	// 配置 CORS
 
 	// Swagger 文檔
@@ -54,6 +52,8 @@ func SetupRouter(server *api.Server, tokenMaker token.Maker[uuid.UUID], logger *
 				r.Post("/linkedUser", server.AuthHandler.LinkedUserAccountAndPassword)
 				r.With(m.AuthMiddleware).Get("/me", server.AuthHandler.Me)
 				r.With(m.AuthMiddleware).Get("/permissions", server.AuthHandler.Permissions)
+				r.With(m.AuthMiddleware).Post("/deactivate-user", server.AuthHandler.DeactivateUser)
+				r.With(m.AuthMiddleware).Post("/activate-user", server.AuthHandler.ActivateUser)
 			})
 		})
 	})

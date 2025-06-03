@@ -9,6 +9,9 @@ INSERT INTO user_sessions (
 -- name: GetSessionByID :one
 SELECT * FROM user_sessions WHERE id = $1 LIMIT 1;
 
+-- name: GetSessionByUserID :one
+SELECT * FROM user_sessions WHERE user_id = $1 LIMIT 1;
+
 -- name: GetSessionByAccessToken :one
 SELECT * FROM user_sessions WHERE access_token = $1 AND is_active = true LIMIT 1;
 
@@ -61,6 +64,9 @@ WHERE expires_at < CURRENT_TIMESTAMP;
 
 -- name: DeleteSession :exec
 DELETE FROM user_sessions WHERE id = $1;
+
+-- name: DeleteSessionByUserID :exec
+DELETE FROM user_sessions WHERE user_id = $1;
 
 -- name: ForceClearAllSessions :exec
 TRUNCATE TABLE user_sessions;

@@ -30,8 +30,28 @@ type ISessionService interface {
 	// 錯誤:
 	//   - 數據庫錯誤 500: 在創建會話過程中可能發生的數據庫錯誤
 	CreateSession(ctx context.Context, session *model.UserSession) (*model.UserSession, error)
+	// DeleteSession 刪除指定的會話
+	// 如果會話不存在，err會返回nil
 	DeleteSession(ctx context.Context, sessionID uuid.UUID) error
+	// DeleteSession 刪除指定的會話
+	// 如果會話不存在，err會返回nil
+	DeleteSessionByUserID(ctx context.Context, userID uuid.UUID) error
+	// DeleteExpiredSessions 刪除所有過期的會話
 	DeleteExpiredSessions(ctx context.Context) error
+	// GetUserSessionByUserID 根據用戶ID從數據庫獲取用戶會話信息
+	// session不存在, err會是 nil
+	// 參數:
+	//   - ctx: 上下文，用於控制請求生命週期
+	//   - userID: 用戶ID
+	//
+	// 返回:
+	//   - *model.UserSession: 用戶會話詳細信息
+	//   - error: 操作過程中可能發生的錯誤
+	//
+	// 可能的錯誤:
+	//   - 數據庫操作錯誤 500
+	GetUserSessionByUserID(ctx context.Context, userID uuid.UUID) (*model.UserSession, error)
+
 	// GetUserSessionByReqInfo 根據用戶ID、IP地址和設備名稱從數據庫獲取用戶會話信息
 	//
 	// 參數:
@@ -122,9 +142,17 @@ func (s *SessionService) CreateSession(ctx context.Context, session *model.UserS
 }
 
 // DeleteSession 刪除指定的會話
+// 如果會話不存在，err會返回nil
 func (s *SessionService) DeleteSession(ctx context.Context, sessionID uuid.UUID) error {
 	pgUUID := pgutil.UUIDToPgUUIDV5(sessionID)
-	return s.dbDao.DeleteSession(ctx, pgUUID)
+	err := s.dbDao.DeleteSession(ctx, pgUUID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return er.New(er.InternalErrorCode, err.Error())
+	}
+	return nil
 }
 
 // DeleteExpiredSessions 刪除所有過期的會話
@@ -272,4 +300,41 @@ func (s *SessionService) UpdateSessionTokens(ctx context.Context, sessionID uuid
 //   - 數據庫操作錯誤 500
 func (s *SessionService) ForceClearAllSessions(ctx context.Context) error {
 	return s.dbDao.ForceClearAllSessions(ctx)
+}
+
+// DeleteSessionByUserID 刪除指定用戶的所有會話
+// 如果用戶沒有會話，err會返回nil
+func (s *SessionService) DeleteSessionByUserID(ctx context.Context, userID uuid.UUID) error {
+	pgUUID := pgutil.UUIDToPgUUIDV5(userID)
+	err := s.dbDao.DeleteSessionByUserID(ctx, pgUUID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return er.New(er.InternalErrorCode, err.Error())
+	}
+	return nil
+}
+
+// GetUserSessionByUserID 根據用戶ID從數據庫獲取用戶會話信息
+// session不存在, err會是 nil
+// 參數:
+//   - ctx: 上下文，用於控制請求生命週期
+//   - userID: 用戶ID
+//
+// 返回:
+//   - *model.UserSession: 用戶會話詳細信息
+//   - error: 操作過程中可能發生的錯誤
+//
+// 可能的錯誤:
+//   - 數據庫操作錯誤 500
+func (s *SessionService) GetUserSessionByUserID(ctx context.Context, userID uuid.UUID) (*model.UserSession, error) {
+	sessionEntity, err := s.dbDao.GetSessionByUserID(ctx, pgutil.UUIDToPgUUIDV5(userID))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, er.New(er.InternalErrorCode, err.Error())
+	}
+	return convertRepoSessionToModel(sessionEntity), nil
 }

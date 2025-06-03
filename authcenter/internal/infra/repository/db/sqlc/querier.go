@@ -33,6 +33,7 @@ type Querier interface {
 	DeletePermission(ctx context.Context, id int32) error
 	DeleteRole(ctx context.Context, id int32) error
 	DeleteSession(ctx context.Context, id pgtype.UUID) error
+	DeleteSessionByUserID(ctx context.Context, userID pgtype.UUID) error
 	DeleteUser(ctx context.Context, id pgtype.UUID) error
 	ForceClearAllSessions(ctx context.Context) error
 	GetEmailVertify(ctx context.Context, id string) (EmailVertify, error)
@@ -46,6 +47,7 @@ type Querier interface {
 	GetSessionByID(ctx context.Context, id pgtype.UUID) (UserSession, error)
 	GetSessionByRefreshToken(ctx context.Context, refreshToken string) (UserSession, error)
 	GetSessionByRequestInfo(ctx context.Context, arg GetSessionByRequestInfoParams) (UserSession, error)
+	GetSessionByUserID(ctx context.Context, userID pgtype.UUID) (UserSession, error)
 	GetUserByAccount(ctx context.Context, account pgtype.Text) (User, error)
 	GetUserByAccountAndPassword(ctx context.Context, account pgtype.Text) (User, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)

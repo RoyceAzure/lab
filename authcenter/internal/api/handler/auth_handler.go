@@ -17,14 +17,19 @@ import (
 
 type AuthHandler struct {
 	authService service.IAuthService
+	userService service.IUserService
 }
 
-func NewAuthHandler(authService service.IAuthService) *AuthHandler {
+func NewAuthHandler(authService service.IAuthService, userService service.IUserService) *AuthHandler {
 	if authService == nil {
 		panic("authService cannot be nil")
 	}
+	if userService == nil {
+		panic("userService cannot be nil")
+	}
 	return &AuthHandler{
 		authService: authService,
+		userService: userService,
 	}
 }
 
@@ -376,6 +381,88 @@ func (a *AuthHandler) LinkedUserAccountAndPassword(w http.ResponseWriter, r *htt
 		} else {
 			api.ErrorJSON(w, int(er.InternalErrorCode), err, er.ErrStrMap[er.InternalErrorCode])
 		}
+		return
+	}
+
+	api.SuccessJSON(w, nil, nil)
+}
+
+// @Summary 停用用戶
+// @use 停用用戶
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param user_id query string true "user_id"
+// @Success 200 {object} api.Response{data=string} "success"
+// @Failure 401 {object} api.ResponseError{data=string} "UnauthenticatedCode"
+// @Failure 460 {object} api.ResponseError{data=string} "InvalidArgumentCode"
+// @Failure 500 {object} api.ResponseError{data=string} "Internal server error"
+// @Security     ApiKeyAuth
+// @Router /auth/deactivate-user [post]
+func (a *AuthHandler) DeactivateUser(w http.ResponseWriter, r *http.Request) {
+	userIDstr := r.URL.Query().Get("user_id")
+	if userIDstr == "" {
+		api.ErrorJSON(w, int(er.InvalidArgumentCode), errors.New("user_id is required"), er.ErrStrMap[er.InvalidArgumentCode])
+		return
+	}
+
+	userID, err := uuid.Parse(userIDstr)
+	if err != nil {
+		api.ErrorJSON(w, int(er.InvalidArgumentCode), err, er.ErrStrMap[er.InvalidArgumentCode])
+		return
+	}
+
+	ctx := r.Context()
+	payload := util.GetTokenPayloadFromContext[uuid.UUID](ctx)
+	if payload == nil {
+		api.ErrorJSON(w, int(er.UnauthenticatedCode), errors.New("token is invalidate"), er.ErrStrMap[er.UnauthenticatedCode])
+		return
+	}
+
+	err = a.authService.DeActiveUser(ctx, payload.UPN, userID)
+	if err != nil {
+		api.ErrorJSON(w, int(er.InternalErrorCode), err, er.ErrStrMap[er.InternalErrorCode])
+		return
+	}
+
+	api.SuccessJSON(w, nil, nil)
+}
+
+// @Summary 啟用用戶
+// @use 啟用用戶
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param user_id query string true "user_id"
+// @Success 200 {object} api.Response{data=string} "success"
+// @Failure 401 {object} api.ResponseError{data=string} "UnauthenticatedCode"
+// @Failure 460 {object} api.ResponseError{data=string} "InvalidArgumentCode"
+// @Failure 500 {object} api.ResponseError{data=string} "Internal server error"
+// @Security     ApiKeyAuth
+// @Router /auth/activate-user [post]
+func (a *AuthHandler) ActivateUser(w http.ResponseWriter, r *http.Request) {
+	userIDstr := r.URL.Query().Get("user_id")
+	if userIDstr == "" {
+		api.ErrorJSON(w, int(er.InvalidArgumentCode), errors.New("user_id is required"), er.ErrStrMap[er.InvalidArgumentCode])
+		return
+	}
+
+	userID, err := uuid.Parse(userIDstr)
+	if err != nil {
+		api.ErrorJSON(w, int(er.InvalidArgumentCode), err, er.ErrStrMap[er.InvalidArgumentCode])
+		return
+	}
+
+	ctx := r.Context()
+	payload := util.GetTokenPayloadFromContext[uuid.UUID](ctx)
+	if payload == nil {
+		api.ErrorJSON(w, int(er.UnauthenticatedCode), errors.New("token is invalidate"), er.ErrStrMap[er.UnauthenticatedCode])
+		return
+	}
+
+	err = a.authService.ActiveUser(ctx, payload.UPN, userID)
+	if err != nil {
+		api.ErrorJSON(w, int(er.InternalErrorCode), err, er.ErrStrMap[er.InternalErrorCode])
 		return
 	}
 

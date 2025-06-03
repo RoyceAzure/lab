@@ -48,12 +48,12 @@ func main() {
 	}
 
 	// 初始化 handler
-	authHandler := handler.NewAuthHandler(app.AuthService)
+	authHandler := handler.NewAuthHandler(app.AuthService, app.UserService)
 
 	server := api.NewServer(authHandler)
 
 	// 設置路由
-	r := router.SetupRouter(server, app.TokenMaker, nil)
+	r := router.SetupRouter(server, app)
 
 	// 設定服務器參數
 	srv := &http.Server{

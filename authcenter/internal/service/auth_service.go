@@ -15,6 +15,7 @@ import (
 	"github.com/RoyceAzure/lab/authcenter/internal/infra/repository/db/sqlc"
 	"github.com/RoyceAzure/lab/authcenter/internal/model"
 	"github.com/RoyceAzure/lab/authcenter/internal/util"
+	"github.com/RoyceAzure/lab/rj_redis/pkg/cache"
 	"github.com/RoyceAzure/rj/api/token"
 	pgutil "github.com/RoyceAzure/rj/util/pg_util"
 	"github.com/RoyceAzure/rj/util/random"
@@ -152,6 +153,14 @@ type IAuthService interface {
 	//	  - er.NotFoundCode 404: email不存在
 	//	  - er.InvalidOperationCode 464: email未驗證
 	LinkUserAccountAndPas(ctx context.Context, userModel *model.CreateUserByAccountAndPasModel) error
+	// DeActiveUser 將user加入黑名單
+	// deactive user
+	// user session 刪除
+	// user access token 加入黑名單
+	// 錯誤:
+	//   - er.InternalErrorCode 500: 內部處理錯誤
+	DeActiveUser(ctx context.Context, operatorUPN string, userID uuid.UUID) error
+	ActiveUser(ctx context.Context, operatorUPN string, userID uuid.UUID) error
 }
 
 type AuthService struct {
@@ -161,6 +170,7 @@ type AuthService struct {
 	mailService        IMailService
 	googleAuthVerifier google_auth.IAuthVerifier
 	tokenMaker         token.Maker[uuid.UUID]
+	blackListRedis     cache.Cache
 }
 
 var (
@@ -169,7 +179,10 @@ var (
 	ErrSessionInactive = errors.New("session is not active")
 )
 
-func NewAuthService(dbDao db.IStore, userService IUserService, sessionService ISessionService, mailService IMailService, tokenMaker token.Maker[uuid.UUID], googleAuthVerifier google_auth.IAuthVerifier) IAuthService {
+func NewAuthService(dbDao db.IStore, userService IUserService,
+	sessionService ISessionService, mailService IMailService,
+	tokenMaker token.Maker[uuid.UUID], googleAuthVerifier google_auth.IAuthVerifier,
+	blackListRedis cache.Cache) IAuthService {
 	if reflect.ValueOf(dbDao).IsNil() {
 		panic("auth service initialization failed: dbDao cannot be nil")
 	}
@@ -188,6 +201,9 @@ func NewAuthService(dbDao db.IStore, userService IUserService, sessionService IS
 	if reflect.ValueOf(tokenMaker).IsNil() {
 		panic("auth service initialization failed: tokenMaker cannot be nil")
 	}
+	if reflect.ValueOf(blackListRedis).IsNil() {
+		panic("auth service initialization failed: blackListRedis cannot be nil")
+	}
 
 	return &AuthService{
 		dbDao:              dbDao,
@@ -196,6 +212,7 @@ func NewAuthService(dbDao db.IStore, userService IUserService, sessionService IS
 		mailService:        mailService,
 		googleAuthVerifier: googleAuthVerifier,
 		tokenMaker:         tokenMaker,
+		blackListRedis:     blackListRedis,
 	}
 }
 
@@ -599,7 +616,7 @@ func (a *AuthService) LinkUserAccountAndPas(ctx context.Context, userModel *mode
 	}
 
 	if !user.IsActive {
-		return er.New(er.InvalidOperationCode, "email not vaildate yet")
+		return er.New(er.InvalidOperationCode, "user is not active yet")
 	}
 
 	if user.Account != nil || user.HashPassword != nil {
@@ -737,6 +754,67 @@ func (a *AuthService) VertifyUserEmailLink(ctx context.Context, linkCode string)
 	err = a.dbDao.DeleteEmailVertify(ctx, emailVertify.ID)
 	if err != nil {
 		return er.New(er.InternalErrorCode, "delete email vertify failed")
+	}
+
+	return nil
+}
+
+// DeActiveUser 將user加入黑名單
+// deactive user
+// user session 刪除
+// user access token 加入黑名單
+// 錯誤:
+//   - er.InternalErrorCode 500: 內部處理錯誤
+func (a *AuthService) DeActiveUser(ctx context.Context, operatorUPN string, userID uuid.UUID) error {
+	operatorModel, err := a.CheckUserValidate(ctx, operatorUPN)
+	if err != nil {
+		return err
+	}
+
+	if !operatorModel.IsAdmin {
+		return er.New(er.UnauthorizedCode, "user has no permission to activate user")
+	}
+
+	err = a.userService.DeactivateUser(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	userSession, err := a.sessionService.GetUserSessionByUserID(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	if userSession == nil {
+		return nil
+	}
+
+	err = a.sessionService.DeleteSessionByUserID(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	err = a.blackListRedis.Set(ctx, userSession.AccessToken, true, time.Hour*24)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (a *AuthService) ActiveUser(ctx context.Context, operatorUPN string, userID uuid.UUID) error {
+	operatorModel, err := a.CheckUserValidate(ctx, operatorUPN)
+	if err != nil {
+		return err
+	}
+
+	if !operatorModel.IsAdmin {
+		return er.New(er.UnauthorizedCode, "user has no permission to activate user")
+	}
+
+	err = a.userService.ActiveUser(ctx, userID)
+	if err != nil {
+		return err
 	}
 
 	return nil

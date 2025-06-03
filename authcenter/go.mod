@@ -3,10 +3,12 @@ module github.com/RoyceAzure/lab/authcenter
 go 1.23.3
 
 require (
+	github.com/RoyceAzure/lab/rj_redis v0.0.0-20250602071536-54172576f7e1
 	github.com/RoyceAzure/rj/api v0.0.0-20250530085728-82979d1ed8a1
 	github.com/RoyceAzure/rj/util v0.0.0-20250601092144-46d85c45e62f
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/google/uuid v1.6.0
+	github.com/redis/go-redis/v9 v9.9.0
 	github.com/spf13/viper v1.20.1
 	github.com/swaggo/swag v1.16.4
 	google.golang.org/grpc v1.72.2
@@ -18,8 +20,10 @@ require (
 	github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da // indirect
 	github.com/aead/chacha20poly1305 v0.0.0-20201124145622-1a5aba2a8b29 // indirect
 	github.com/aead/poly1305 v0.0.0-20180717145839-3fee0db0b635 // indirect
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/go-openapi/jsonpointer v0.21.1 // indirect
 	github.com/go-openapi/jsonreference v0.21.0 // indirect
 	github.com/go-openapi/spec v0.21.0 // indirect

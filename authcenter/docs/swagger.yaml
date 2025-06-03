@@ -131,6 +131,60 @@ info:
   title: authcenter
   version: "1.0"
 paths:
+  /auth/activate-user:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: user_id
+        in: query
+        name: user_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.Response'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "401":
+          description: UnauthenticatedCode
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.ResponseError'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "460":
+          description: InvalidArgumentCode
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.ResponseError'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "500":
+          description: Internal server error
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.ResponseError'
+            - properties:
+                data:
+                  type: string
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 啟用用戶
+      tags:
+      - auth
   /auth/create-vertify-email:
     post:
       consumes:
@@ -184,6 +238,60 @@ paths:
       summary: 創建email認證連結
       tags:
       - Register
+  /auth/deactivate-user:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: user_id
+        in: query
+        name: user_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.Response'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "401":
+          description: UnauthenticatedCode
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.ResponseError'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "460":
+          description: InvalidArgumentCode
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.ResponseError'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "500":
+          description: Internal server error
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.ResponseError'
+            - properties:
+                data:
+                  type: string
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 停用用戶
+      tags:
+      - auth
   /auth/linkedUser:
     post:
       consumes:

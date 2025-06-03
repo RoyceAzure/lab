@@ -40,6 +40,8 @@ type Config struct {
 	AuthTokenKey       string `mapstructure:"AUTH_TOKEN_KEY"`
 	SmtpAuthKey        string `mapstructure:"SMTP_AUTH_KEY"`
 	EmailAccount       string `mapstructure:"EMAIL_ACCOUNT"`
+	RedisAddr          string `mapstructure:"REDIS_ADDR"`
+	RedisPassword      string `mapstructure:"REDIS_PASSWORD"`
 }
 
 func GetConfig() *Config {

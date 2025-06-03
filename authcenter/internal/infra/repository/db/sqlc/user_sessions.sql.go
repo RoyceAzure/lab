@@ -84,6 +84,15 @@ func (q *Queries) DeleteSession(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const deleteSessionByUserID = `-- name: DeleteSessionByUserID :exec
+DELETE FROM user_sessions WHERE user_id = $1
+`
+
+func (q *Queries) DeleteSessionByUserID(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteSessionByUserID, userID)
+	return err
+}
+
 const forceClearAllSessions = `-- name: ForceClearAllSessions :exec
 TRUNCATE TABLE user_sessions
 `
@@ -198,6 +207,31 @@ func (q *Queries) GetSessionByRequestInfo(ctx context.Context, arg GetSessionByR
 		arg.Region,
 		arg.UserAgent,
 	)
+	var i UserSession
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.AccessToken,
+		&i.RefreshToken,
+		&i.IpAddress,
+		&i.DeviceInfo,
+		&i.Region,
+		&i.UserAgent,
+		&i.IsActive,
+		&i.LastActivityAt,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
+const getSessionByUserID = `-- name: GetSessionByUserID :one
+SELECT id, user_id, access_token, refresh_token, ip_address, device_info, region, user_agent, is_active, last_activity_at, created_at, expires_at, revoked_at FROM user_sessions WHERE user_id = $1 LIMIT 1
+`
+
+func (q *Queries) GetSessionByUserID(ctx context.Context, userID pgtype.UUID) (UserSession, error) {
+	row := q.db.QueryRow(ctx, getSessionByUserID, userID)
 	var i UserSession
 	err := row.Scan(
 		&i.ID,
