@@ -2,7 +2,9 @@ package consumer
 
 import (
 	"context"
+	"log"
 	"sync/atomic"
+	"time"
 
 	"github.com/segmentio/kafka-go"
 
@@ -54,6 +56,24 @@ func New(cfg *config.Config) (Consumer, error) {
 		MaxBytes:       cfg.ConsumerMaxBytes,
 		MaxWait:        cfg.ConsumerMaxWait,
 		CommitInterval: cfg.CommitInterval,
+
+		// 重連機制設定
+		Dialer: &kafka.Dialer{
+			Timeout:   10 * time.Second,
+			DualStack: true,
+			KeepAlive: 30 * time.Second,
+		},
+
+		// 錯誤處理
+		ErrorLogger: kafka.LoggerFunc(func(msg string, args ...interface{}) {
+			log.Printf("Kafka Reader Error: "+msg, args...)
+		}),
+
+		// 讀取超時設定
+		ReadBatchTimeout: 10 * time.Second,
+		ReadLagInterval:  1 * time.Minute,
+		ReadBackoffMin:   1 * time.Second,
+		ReadBackoffMax:   10 * time.Second,
 	})
 
 	return &kafkaConsumer{
@@ -72,44 +92,34 @@ func (c *kafkaConsumer) Consume(ctx context.Context) (<-chan message.Message, <-
 		defer close(errCh)
 
 		for {
-			select {
-			case <-ctx.Done():
+			if c.closed.Load() {
 				errCh <- &ConsumerError{
 					Fatal: true,
-					Err:   ctx.Err(),
+					Err:   errors.ErrConsumerClosed,
 				}
 				return
-			default:
-				if c.closed.Load() {
+			}
+			//block操作
+			msg, err := c.reader.ReadMessage(ctx)
+			if err != nil {
+				kafkaErr := errors.NewKafkaError("Consume", c.cfg.Topic, err)
+				if !errors.IsTemporary(err) {
 					errCh <- &ConsumerError{
 						Fatal: true,
-						Err:   errors.ErrConsumerClosed,
+						Err:   kafkaErr,
 					}
 					return
 				}
 
-				msg, err := c.reader.ReadMessage(ctx)
-				if err != nil {
-					kafkaErr := errors.NewKafkaError("Consume", c.cfg.Topic, err)
-
-					if errors.IsFatalConsumerError(err) {
-						errCh <- &ConsumerError{
-							Fatal: true,
-							Err:   kafkaErr,
-						}
-						return
-					}
-
-					// 可重試的錯誤
-					errCh <- &ConsumerError{
-						Fatal: false,
-						Err:   kafkaErr,
-					}
-					continue
+				// 可重試的錯誤
+				errCh <- &ConsumerError{
+					Fatal: false,
+					Err:   kafkaErr,
 				}
-
-				msgCh <- message.FromKafkaMessage(msg)
+				continue
 			}
+
+			msgCh <- message.FromKafkaMessage(msg)
 		}
 	}()
 

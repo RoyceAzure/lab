@@ -2,6 +2,8 @@ package producer
 
 import (
 	"context"
+	"log"
+	"net"
 	"sync/atomic"
 	"time"
 
@@ -41,6 +43,29 @@ func New(cfg *config.Config) (Producer, error) {
 		BatchTimeout: cfg.BatchTimeout,
 		RequiredAcks: kafka.RequiredAcks(cfg.RequiredAcks),
 		Async:        false,
+
+		// 重試機制設置
+		MaxAttempts: cfg.RetryAttempts, // 最大重試次數
+
+		// 重連機制設置
+		Transport: &kafka.Transport{
+			Dial: func(ctx context.Context, network string, address string) (net.Conn, error) {
+				dialer := &kafka.Dialer{
+					Timeout:   10 * time.Second, // 連接超時
+					DualStack: true,             // 支援 IPv4/IPv6
+					KeepAlive: 30 * time.Second, // TCP keepalive
+				}
+				return dialer.DialContext(ctx, network, address)
+			},
+		},
+
+		// 錯誤處理
+		ErrorLogger: kafka.LoggerFunc(func(msg string, args ...interface{}) {
+			log.Printf("kafka producer error: "+msg, args...)
+		}),
+
+		// 壓縮設置
+		Compression: kafka.Snappy,
 	}
 
 	return &kafkaProducer{
@@ -50,9 +75,15 @@ func New(cfg *config.Config) (Producer, error) {
 }
 
 // Produce implements the Producer interface
+// 同步發送消息，會block到所有消息都寫入
 func (p *kafkaProducer) Produce(ctx context.Context, msgs []message.Message) error {
 	if p.closed.Load() {
 		return errors.ErrProducerClosed
+	}
+
+	// 先檢查傳入的參數
+	if len(msgs) == 0 {
+		return nil // 或者返回一個參數錯誤
 	}
 
 	kafkaMsgs := make([]kafka.Message, len(msgs))
@@ -62,6 +93,11 @@ func (p *kafkaProducer) Produce(ctx context.Context, msgs []message.Message) err
 
 	var err error
 	for attempt := 0; attempt <= p.cfg.RetryAttempts; attempt++ {
+		// 檢查外部 context 是否已經取消
+		if ctx.Err() != nil {
+			return errors.NewKafkaError("Produce", p.cfg.Topic, ctx.Err())
+		}
+		//同步模式，會block到所有消息都寫入
 		err = p.writer.WriteMessages(ctx, kafkaMsgs...)
 		if err == nil {
 			return nil
@@ -69,13 +105,6 @@ func (p *kafkaProducer) Produce(ctx context.Context, msgs []message.Message) err
 
 		if !errors.IsTemporary(err) {
 			break
-		}
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(p.cfg.RetryDelay):
-			continue
 		}
 	}
 

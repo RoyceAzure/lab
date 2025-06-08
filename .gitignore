@@ -215,3 +215,6 @@
 #cursor
 .cursor
 
+#depolyment
+**/deployment/
+

@@ -76,6 +76,8 @@ func IsTemporary(err error) bool {
 }
 
 // isTemporaryError checks if the error is temporary
+// 包括ctx 超時與取消
+// 包括網路錯誤
 func isTemporaryError(err error) bool {
 	if err == nil {
 		return false
@@ -93,30 +95,13 @@ func isTemporaryError(err error) bool {
 		return true
 	}
 
-	// 檢查網絡相關錯誤
-	var netErr net.Error
-	if errors.As(err, &netErr) {
-		return netErr.Timeout()
+	// Context 錯誤
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
 	}
 
-	// 檢查常見的臨時錯誤字符串
-	errStr := err.Error()
-	temporaryErrors := []string{
-		"connection refused",
-		"broken pipe",
-		"connection reset by peer",
-		"no route to host",
-		"network is unreachable",
-		"operation timed out",
-		"too many open files",
-		"no buffer space",
-		"connection timed out",
-	}
-
-	for _, tempErr := range temporaryErrors {
-		if strings.Contains(strings.ToLower(errStr), tempErr) {
-			return true
-		}
+	if IsConnectionError(err) {
+		return true
 	}
 
 	return false
@@ -137,9 +122,13 @@ func IsConnectionError(err error) bool {
 	connectionErrors := []string{
 		"connection refused",
 		"broken pipe",
-		"connection reset",
+		"connection reset by peer",
 		"no route to host",
 		"network is unreachable",
+		"operation timed out",
+		"too many open files",
+		"no buffer space",
+		"connection timed out",
 	}
 
 	for _, connErr := range connectionErrors {
@@ -166,171 +155,4 @@ func IsTimeoutError(err error) bool {
 	}
 
 	return strings.Contains(strings.ToLower(err.Error()), "timeout")
-}
-
-// IsTemporaryProducerError 判斷是否為生產者的臨時錯誤
-func IsTemporaryProducerError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	// 解包 KafkaError
-	var kafkaErr *KafkaError
-	if errors.As(err, &kafkaErr) {
-		err = kafkaErr.Err
-	}
-
-	// kafka-go 特定的臨時錯誤
-	if errors.Is(err, kafka.LeaderNotAvailable) ||
-		errors.Is(err, kafka.NotLeaderForPartition) ||
-		errors.Is(err, kafka.RequestTimedOut) {
-		return true
-	}
-
-	// 檢查錯誤字符串
-	errStr := strings.ToLower(err.Error())
-	temporaryErrors := []string{
-		"connection refused",
-		"broken pipe",
-		"connection reset",
-		"no route to host",
-		"network is unreachable",
-		"timeout",
-		"leader not available",
-		"not leader for partition",
-	}
-
-	for _, tempErr := range temporaryErrors {
-		if strings.Contains(errStr, tempErr) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// IsTemporaryConsumerError 判斷是否為消費者的臨時錯誤
-func IsTemporaryConsumerError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	// 解包 KafkaError
-	var kafkaErr *KafkaError
-	if errors.As(err, &kafkaErr) {
-		err = kafkaErr.Err
-	}
-
-	// 檢查錯誤字符串
-	errStr := strings.ToLower(err.Error())
-	temporaryErrors := []string{
-		"connection refused",
-		"broken pipe",
-		"connection reset",
-		"no route to host",
-		"network is unreachable",
-		"timeout",
-		"offset out of range",
-		"group coordinator not available",
-		"not coordinator for group",
-	}
-
-	for _, tempErr := range temporaryErrors {
-		if strings.Contains(errStr, tempErr) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// IsFatalConsumerError 判斷是否為消費者的致命錯誤
-func IsFatalConsumerError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	// 解包 KafkaError
-	var kafkaErr *KafkaError
-	if errors.As(err, &kafkaErr) {
-		err = kafkaErr.Err
-	}
-
-	// Context 錯誤
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-
-	// 消費者已關閉
-	if errors.Is(err, ErrConsumerClosed) {
-		return true
-	}
-
-	// 檢查錯誤字符串
-	errStr := strings.ToLower(err.Error())
-	fatalErrors := []string{
-		"authentication failed",
-		"sasl authentication failed",
-		"authorization failed",
-		"not authorized",
-		"invalid configuration",
-		"configuration error",
-		"illegal generation",
-		"unknown member id",
-		"group id not found",
-		"coordinator load in progress",
-	}
-
-	for _, fatalErr := range fatalErrors {
-		if strings.Contains(errStr, fatalErr) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// IsFatalProducerError 判斷是否為生產者的致命錯誤
-func IsFatalProducerError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	// 解包 KafkaError
-	var kafkaErr *KafkaError
-	if errors.As(err, &kafkaErr) {
-		err = kafkaErr.Err
-	}
-
-	// Context 錯誤
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-
-	// 生產者已關閉
-	if errors.Is(err, ErrProducerClosed) {
-		return true
-	}
-
-	// 檢查錯誤字符串
-	errStr := strings.ToLower(err.Error())
-	fatalErrors := []string{
-		"authentication failed",
-		"sasl authentication failed",
-		"authorization failed",
-		"not authorized",
-		"invalid configuration",
-		"configuration error",
-		"topic authorization failed",
-		"invalid topic",
-		"topic not found",
-	}
-
-	for _, fatalErr := range fatalErrors {
-		if strings.Contains(errStr, fatalErr) {
-			return true
-		}
-	}
-
-	return false
 }
