@@ -61,7 +61,7 @@ func New(cfg *config.Config) (Producer, error) {
 // 同步發送消息，會block到所有消息都寫入
 func (p *kafkaProducer) Produce(ctx context.Context, msgs []message.Message) error {
 	if p.closed.Load() {
-		return errors.ErrProducerClosed
+		return errors.ErrClientClosed
 	}
 
 	// 先檢查傳入的參數
@@ -86,7 +86,7 @@ func (p *kafkaProducer) Produce(ctx context.Context, msgs []message.Message) err
 			return nil
 		}
 
-		if !errors.IsTemporary(err) {
+		if !errors.IsTemporaryError(err) {
 			break
 		}
 	}

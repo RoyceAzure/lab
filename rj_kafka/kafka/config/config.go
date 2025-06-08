@@ -33,6 +33,14 @@ type Config struct {
 	// 通用配置
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
+
+	// 重連相關配置
+	MaxRetryAttempts   int           `yaml:"max_retry_attempts"`   // 最大重試次數
+	RetryBackoffMin    time.Duration `yaml:"retry_backoff_min"`    // 最小重試間隔
+	RetryBackoffMax    time.Duration `yaml:"retry_backoff_max"`    // 最大重試間隔
+	RetryBackoffFactor float64       `yaml:"retry_backoff_factor"` // 重試間隔增長因子
+	AutoResetOffset    bool          `yaml:"auto_reset_offset"`    // 重連後是否重設 offset
+	ReconnectWaitTime  time.Duration `yaml:"reconnect_wait_time"`  // 重連等待時間
 }
 
 // DefaultConfig returns a Config with default settings
@@ -61,4 +69,23 @@ func (c *Config) Validate() error {
 		return ErrNoTopic
 	}
 	return nil
+}
+
+func (c *Config) setDefaults() {
+	// 設置重連相關的默認值
+	if c.MaxRetryAttempts == 0 {
+		c.MaxRetryAttempts = 5
+	}
+	if c.RetryBackoffMin == 0 {
+		c.RetryBackoffMin = time.Second
+	}
+	if c.RetryBackoffMax == 0 {
+		c.RetryBackoffMax = 30 * time.Second
+	}
+	if c.RetryBackoffFactor == 0 {
+		c.RetryBackoffFactor = 2.0
+	}
+	if c.ReconnectWaitTime == 0 {
+		c.ReconnectWaitTime = 5 * time.Second
+	}
 }

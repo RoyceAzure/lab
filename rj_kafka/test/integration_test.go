@@ -376,3 +376,334 @@ func TestProducerConsumerWithLargeMessagesOneByOne(t *testing.T) {
 		assert.True(t, messageMap[string(sent.Key)], "Message not received: %s", string(sent.Key))
 	}
 }
+
+// TestBrokerFailureRecovery 測試 broker 離線和重連的情況
+func TestBrokerFailureRecovery(t *testing.T) {
+	cleanup := setupTest(t)
+	defer cleanup()
+
+	// 配置較短的重試時間
+	cfg := &config.Config{
+		Brokers:        testClusterConfig.Cluster.Brokers,
+		Topic:          testClusterConfig.Topics[0].Name,
+		ConsumerGroup:  fmt.Sprintf("test-failure-group-%s-%d", t.Name(), time.Now().UnixNano()),
+		RetryAttempts:  5,
+		BatchTimeout:   time.Second,
+		BatchSize:      1,
+		RequiredAcks:   -1, // 等待所有副本確認
+		CommitInterval: time.Second,
+	}
+
+	// 創建 Producer 和 Consumer
+	p, err := producer.New(cfg)
+	assert.NoError(t, err)
+	defer p.Close()
+
+	c, err := consumer.New(cfg)
+	assert.NoError(t, err)
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		err := c.Close()
+		assert.NoError(t, err)
+		<-closeCtx.Done()
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// 啟動 consumer
+	msgChan, errChan := c.Consume(ctx)
+
+	// 準備測試消息
+	messages := []message.Message{
+		{
+			Key:   []byte("pre-failure"),
+			Value: []byte("message before broker failure"),
+		},
+	}
+
+	// 發送第一條消息
+	err = p.Produce(ctx, messages)
+	assert.NoError(t, err)
+
+	// 等待第一條消息被消費
+	receivedPreFailure := false
+	timeout := time.After(10 * time.Second)
+
+	for !receivedPreFailure {
+		select {
+		case msg := <-msgChan:
+			if string(msg.Key) == "pre-failure" {
+				receivedPreFailure = true
+				err := c.CommitMessages(ctx, msg)
+				assert.NoError(t, err)
+			}
+		case err := <-errChan:
+			t.Errorf("Error consuming message: %v", err)
+			return
+		case <-timeout:
+			t.Fatal("Timeout waiting for pre-failure message")
+			return
+		}
+	}
+
+	// 模擬 broker 故障：停止其中一個 broker
+	// 注意：這裡需要實際執行 docker stop 命令
+	t.Log("Simulating broker failure...")
+	// TODO: 在這裡添加實際停止 broker 的程式碼
+
+	// 嘗試在 broker 故障期間發送消息
+	failureMessages := []message.Message{
+		{
+			Key:   []byte("during-failure"),
+			Value: []byte("message during broker failure"),
+		},
+	}
+
+	// 這裡預期會有錯誤或重試
+	err = p.Produce(ctx, failureMessages)
+	t.Logf("Produce during failure result: %v", err)
+
+	// 等待一段時間
+	time.Sleep(5 * time.Second)
+
+	// 重啟 broker
+	t.Log("Restarting broker...")
+	// TODO: 在這裡添加實際重啟 broker 的程式碼
+
+	// 等待 broker 重新上線
+	time.Sleep(10 * time.Second)
+
+	// 發送恢復後的消息
+	recoveryMessages := []message.Message{
+		{
+			Key:   []byte("post-recovery"),
+			Value: []byte("message after broker recovery"),
+		},
+	}
+
+	err = p.Produce(ctx, recoveryMessages)
+	assert.NoError(t, err)
+
+	// 驗證恢復後的消息是否被正確接收
+	receivedPostRecovery := false
+	timeout = time.After(10 * time.Second)
+
+	for !receivedPostRecovery {
+		select {
+		case msg := <-msgChan:
+			if string(msg.Key) == "post-recovery" {
+				receivedPostRecovery = true
+				err := c.CommitMessages(ctx, msg)
+				assert.NoError(t, err)
+			}
+		case err := <-errChan:
+			t.Errorf("Error consuming message: %v", err)
+			return
+		case <-timeout:
+			t.Fatal("Timeout waiting for post-recovery message")
+			return
+		}
+	}
+}
+
+// TestProducerRetryMechanism 測試生產者重試機制
+func TestProducerRetryMechanism(t *testing.T) {
+	cleanup := setupTest(t)
+	defer cleanup()
+
+	// 配置較短的重試間隔
+	cfg := &config.Config{
+		Brokers:        testClusterConfig.Cluster.Brokers,
+		Topic:          testClusterConfig.Topics[0].Name,
+		ConsumerGroup:  fmt.Sprintf("test-retry-group-%s-%d", t.Name(), time.Now().UnixNano()),
+		RetryAttempts:  3,
+		BatchTimeout:   time.Second,
+		BatchSize:      1,
+		RequiredAcks:   -1, // 等待所有副本確認
+		CommitInterval: time.Second,
+	}
+
+	// 創建 Producer
+	p, err := producer.New(cfg)
+	assert.NoError(t, err)
+	defer p.Close()
+
+	// 創建一個上下文，設定較短的超時時間
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// 準備測試消息
+	messages := []message.Message{
+		{
+			Key:   []byte("retry-test"),
+			Value: []byte("message for retry testing"),
+			Headers: []message.Header{
+				{
+					Key:   "attempt",
+					Value: []byte("1"),
+				},
+			},
+		},
+	}
+
+	// 在發送消息之前模擬網路問題或其他故障
+	// TODO: 在這裡添加模擬網路問題的程式碼
+
+	// 發送消息並觀察重試行為
+	err = p.Produce(ctx, messages)
+	if err != nil {
+		t.Logf("Expected error occurred: %v", err)
+	}
+
+	// 恢復正常連接
+	// TODO: 在這裡添加恢復連接的程式碼
+
+	// 再次發送消息，確認系統已恢復正常
+	err = p.Produce(ctx, messages)
+	assert.NoError(t, err)
+}
+
+// TestConsumerRebalancing 測試消費者重平衡
+func TestConsumerRebalancing(t *testing.T) {
+	cleanup := setupTest(t)
+	defer cleanup()
+
+	cfg := &config.Config{
+		Brokers:        testClusterConfig.Cluster.Brokers,
+		Topic:          testClusterConfig.Topics[0].Name,
+		ConsumerGroup:  fmt.Sprintf("test-rebalance-group-%s-%d", t.Name(), time.Now().UnixNano()),
+		RetryAttempts:  3,
+		BatchTimeout:   time.Second,
+		BatchSize:      1,
+		RequiredAcks:   1,
+		CommitInterval: time.Second,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// 創建第一個消費者
+	consumer1, err := consumer.New(cfg)
+	assert.NoError(t, err)
+	defer consumer1.Close()
+
+	// 啟動第一個消費者
+	msgChan1, errChan1 := consumer1.Consume(ctx)
+
+	// 發送一些初始消息
+	p, err := producer.New(cfg)
+	assert.NoError(t, err)
+	defer p.Close()
+
+	initialMessages := make([]message.Message, 10)
+	for i := 0; i < 10; i++ {
+		initialMessages[i] = message.Message{
+			Key:   []byte(fmt.Sprintf("key-%d", i)),
+			Value: []byte(fmt.Sprintf("value-%d", i)),
+		}
+	}
+
+	err = p.Produce(ctx, initialMessages)
+	assert.NoError(t, err)
+
+	// 等待一些消息被第一個消費者處理
+	time.Sleep(5 * time.Second)
+
+	// 創建第二個消費者（使用相同的消費者組）
+	consumer2, err := consumer.New(cfg)
+	assert.NoError(t, err)
+	defer consumer2.Close()
+
+	// 啟動第二個消費者
+	msgChan2, errChan2 := consumer2.Consume(ctx)
+
+	// 發送更多消息
+	additionalMessages := make([]message.Message, 10)
+	for i := 0; i < 10; i++ {
+		additionalMessages[i] = message.Message{
+			Key:   []byte(fmt.Sprintf("key-%d", i+10)),
+			Value: []byte(fmt.Sprintf("value-%d", i+10)),
+		}
+	}
+
+	err = p.Produce(ctx, additionalMessages)
+	assert.NoError(t, err)
+
+	// 追蹤兩個消費者接收到的消息
+	consumer1Messages := make(map[string]bool)
+	consumer2Messages := make(map[string]bool)
+	messageCount := 0
+	totalExpectedMessages := 20
+
+	// 設定超時
+	timeout := time.After(30 * time.Second)
+
+	// 收集兩個消費者的消息
+	for messageCount < totalExpectedMessages {
+		select {
+		case msg := <-msgChan1:
+			consumer1Messages[string(msg.Key)] = true
+			messageCount++
+			err := consumer1.CommitMessages(ctx, msg)
+			assert.NoError(t, err)
+		case msg := <-msgChan2:
+			consumer2Messages[string(msg.Key)] = true
+			messageCount++
+			err := consumer2.CommitMessages(ctx, msg)
+			assert.NoError(t, err)
+		case err := <-errChan1:
+			t.Errorf("Consumer 1 error: %v", err)
+			return
+		case err := <-errChan2:
+			t.Errorf("Consumer 2 error: %v", err)
+			return
+		case <-timeout:
+			t.Fatal("Test timeout")
+			return
+		}
+	}
+
+	// 驗證消息分配
+	t.Logf("Consumer 1 received %d messages", len(consumer1Messages))
+	t.Logf("Consumer 2 received %d messages", len(consumer2Messages))
+
+	// 確保所有消息都被處理
+	assert.Equal(t, totalExpectedMessages, len(consumer1Messages)+len(consumer2Messages))
+
+	// 關閉第二個消費者，觀察重平衡
+	err = consumer2.Close()
+	assert.NoError(t, err)
+
+	// 發送更多消息，確認第一個消費者接收所有消息
+	finalMessages := make([]message.Message, 5)
+	for i := 0; i < 5; i++ {
+		finalMessages[i] = message.Message{
+			Key:   []byte(fmt.Sprintf("key-%d", i+20)),
+			Value: []byte(fmt.Sprintf("value-%d", i+20)),
+		}
+	}
+
+	err = p.Produce(ctx, finalMessages)
+	assert.NoError(t, err)
+
+	// 驗證第一個消費者接收到所有新消息
+	finalMessageCount := 0
+	timeout = time.After(10 * time.Second)
+
+	for finalMessageCount < 5 {
+		select {
+		case msg := <-msgChan1:
+			finalMessageCount++
+			err := consumer1.CommitMessages(ctx, msg)
+			assert.NoError(t, err)
+		case err := <-errChan1:
+			t.Errorf("Consumer 1 error after rebalance: %v", err)
+			return
+		case <-timeout:
+			t.Fatal("Timeout waiting for final messages")
+			return
+		}
+	}
+}

@@ -16,7 +16,7 @@ import (
 
 func main() {
 	// 1. 載入叢集配置
-	clusterCfg, err := admin.LoadConfig("../deployment/kafka/cluster-config.yaml")
+	clusterCfg, err := admin.LoadConfig("./deployment/kafka/cluster-config.yaml")
 	if err != nil {
 		log.Fatalf("Failed to load cluster config: %v", err)
 	}

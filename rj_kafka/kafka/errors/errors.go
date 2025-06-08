@@ -6,153 +6,168 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"syscall"
 
 	"github.com/segmentio/kafka-go"
 )
 
 var (
-	ErrProducerClosed = errors.New("producer is closed")
-	ErrConsumerClosed = errors.New("consumer is closed")
-	ErrWriteTimeout   = errors.New("write timeout")
-	ErrReadTimeout    = errors.New("read timeout")
+	// ErrClientClosed 表示消費者或生產者已關閉
+	ErrClientClosed = errors.New("consumer or producer is closed")
+	// ErrWriteTimeout 表示寫入超時
+	ErrWriteTimeout = errors.New("write timeout")
+	// ErrReadTimeout 表示讀取超時
+	ErrReadTimeout = errors.New("read timeout")
+	// ErrTopicNotFound 表示主題不存在
+	ErrTopicNotFound = errors.New("topic not found")
+	// ErrAuthenticationFailed 表示認證失敗
+	ErrAuthenticationFailed = errors.New("authentication failed")
+	// ErrPermissionDenied 表示權限不足
+	ErrPermissionDenied = errors.New("permission denied")
+
+	// ErrConsumerAlreadyRunning 表示消費者已經在運行
+	ErrConsumerAlreadyRunning = errors.New("consumer is already running")
 )
 
-// KafkaError represents a Kafka-specific error
+// KafkaError 代表 Kafka 操作錯誤
 type KafkaError struct {
-	Op      string // 操作名稱
-	Topic   string // 主題
-	Message string // 錯誤訊息
-	Err     error  // 原始錯誤
+	Operation string
+	Topic     string
+	Err       error
 }
 
 func (e *KafkaError) Error() string {
-	if e.Topic != "" {
-		return fmt.Sprintf("%s failed for topic %s: %v", e.Op, e.Topic, e.Err)
-	}
-	return fmt.Sprintf("%s failed: %v", e.Op, e.Err)
+	return fmt.Sprintf("kafka operation %s on topic %s failed: %v", e.Operation, e.Topic, e.Err)
 }
 
-func (e *KafkaError) Unwrap() error {
-	return e.Err
-}
-
-// Is implements error comparison for KafkaError
-func (e *KafkaError) Is(target error) bool {
-	// 如果目標錯誤是 KafkaError
-	if t, ok := target.(*KafkaError); ok {
-		// 比較操作名稱和主題（如果有指定）
-		if t.Op != "" && t.Op != e.Op {
-			return false
-		}
-		if t.Topic != "" && t.Topic != e.Topic {
-			return false
-		}
-		// 如果內部錯誤存在，遞迴比較
-		if t.Err != nil {
-			return errors.Is(e.Err, t.Err)
-		}
-		return true
-	}
-	// 如果目標錯誤不是 KafkaError，比較內部錯誤
-	return errors.Is(e.Err, target)
-}
-
-// NewKafkaError creates a new KafkaError
-func NewKafkaError(op, topic string, err error) *KafkaError {
+// NewKafkaError 創建新的 KafkaError
+func NewKafkaError(operation, topic string, err error) error {
 	return &KafkaError{
-		Op:    op,
-		Topic: topic,
-		Err:   err,
+		Operation: operation,
+		Topic:     topic,
+		Err:       err,
 	}
 }
 
-// IsTemporary returns true if the error is temporary and can be retried
-func IsTemporary(err error) bool {
-	var kafkaErr *KafkaError
-	if errors.As(err, &kafkaErr) {
-		return isTemporaryError(kafkaErr.Err)
-	}
-	return isTemporaryError(err)
-}
-
-// isTemporaryError checks if the error is temporary
-// 包括ctx 超時與取消
-// 包括網路錯誤
-func isTemporaryError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	// 檢查我們自定義的臨時錯誤
-	if errors.Is(err, ErrWriteTimeout) || errors.Is(err, ErrReadTimeout) {
-		return true
-	}
-
-	// 檢查 kafka-go 特定的錯誤
-	if errors.Is(err, kafka.LeaderNotAvailable) ||
-		errors.Is(err, kafka.NotLeaderForPartition) ||
-		errors.Is(err, kafka.RequestTimedOut) {
-		return true
-	}
-
-	// Context 錯誤
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-
-	if IsConnectionError(err) {
-		return true
-	}
-
-	return false
-}
-
-// 新增一些輔助函數來檢查特定類型的錯誤
+// IsConnectionError 判斷是否為需要重置連接的錯誤
 func IsConnectionError(err error) bool {
 	if err == nil {
 		return false
 	}
 
-	var netErr net.Error
+	// 解包 KafkaError
+	var kafkaErr *KafkaError
+	if errors.As(err, &kafkaErr) {
+		err = kafkaErr.Err
+	}
+
+	// 檢查具體的網路錯誤
+	var netErr *net.OpError
 	if errors.As(err, &netErr) {
+		// 檢查是否為系統錯誤
+		var sysErr syscall.Errno
+		if errors.As(netErr.Err, &sysErr) {
+			switch sysErr {
+			case syscall.ECONNREFUSED, // 連接被拒絕
+				syscall.ECONNRESET,   // 連接被重置
+				syscall.ECONNABORTED, // 連接中斷
+				syscall.ENETUNREACH,  // 網路不可達
+				syscall.ENETRESET,    // 網路重置
+				syscall.ETIMEDOUT:    // 連接超時
+				return true
+			}
+		}
+		// 一般網路錯誤也需要重置連接
 		return true
 	}
 
-	errStr := err.Error()
-	connectionErrors := []string{
-		"connection refused",
-		"broken pipe",
-		"connection reset by peer",
-		"no route to host",
-		"network is unreachable",
-		"operation timed out",
-		"too many open files",
-		"no buffer space",
-		"connection timed out",
+	// 檢查 DNS 錯誤
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return true
 	}
 
-	for _, connErr := range connectionErrors {
-		if strings.Contains(strings.ToLower(errStr), connErr) {
-			return true
-		}
-	}
-
-	return false
+	// 檢查特定的錯誤字符串
+	errStr := strings.ToLower(err.Error())
+	return strings.Contains(errStr, "broken pipe") ||
+		strings.Contains(errStr, "connection reset by peer") ||
+		strings.Contains(errStr, "i/o timeout") ||
+		strings.Contains(errStr, "no route to host") ||
+		strings.Contains(errStr, "network is unreachable")
 }
 
-func IsTimeoutError(err error) bool {
+// IsTemporaryError 判斷是否為可重試的臨時錯誤
+func IsTemporaryError(err error) bool {
 	if err == nil {
 		return false
 	}
 
-	var netErr net.Error
-	if errors.As(err, &netErr) {
-		return netErr.Timeout()
+	// 如果是需要重置連接的錯誤，不在這裡處理
+	if IsConnectionError(err) {
+		return false
 	}
 
-	if errors.Is(err, ErrWriteTimeout) || errors.Is(err, ErrReadTimeout) {
+	// 如果是致命錯誤，不可重試
+	if IsFatalError(err) {
+		return false
+	}
+
+	// 解包 KafkaError
+	var kafkaErr *KafkaError
+	if errors.As(err, &kafkaErr) {
+		err = kafkaErr.Err
+	}
+
+	// 檢查 Kafka 特定的可重試錯誤
+	if errors.Is(err, kafka.LeaderNotAvailable) ||
+		errors.Is(err, kafka.NotLeaderForPartition) ||
+		errors.Is(err, kafka.RequestTimedOut) ||
+		errors.Is(err, kafka.RebalanceInProgress) {
 		return true
 	}
 
-	return strings.Contains(strings.ToLower(err.Error()), "timeout")
+	// 檢查上下文錯誤
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	// 檢查特定的錯誤字符串
+	errStr := strings.ToLower(err.Error())
+	return strings.Contains(errStr, "no buffer space") ||
+		strings.Contains(errStr, "too many open files") ||
+		strings.Contains(errStr, "temporary") ||
+		strings.Contains(errStr, "retriable") ||
+		strings.Contains(errStr, "rebalance in progress") ||
+		strings.Contains(errStr, "coordinator load in progress")
+}
+
+// IsFatalError 判斷是否為致命錯誤（不可重試）
+func IsFatalError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// 解包 KafkaError
+	var kafkaErr *KafkaError
+	if errors.As(err, &kafkaErr) {
+		err = kafkaErr.Err
+	}
+
+	// 檢查 Kafka 特定的致命錯誤
+	if errors.Is(err, kafka.TopicAuthorizationFailed) ||
+		errors.Is(err, kafka.GroupAuthorizationFailed) ||
+		errors.Is(err, kafka.ClusterAuthorizationFailed) {
+		return true
+	}
+
+	// 檢查特定的錯誤字符串
+	errStr := strings.ToLower(err.Error())
+	return strings.Contains(errStr, "authentication failed") ||
+		strings.Contains(errStr, "authorization failed") ||
+		strings.Contains(errStr, "permission denied") ||
+		strings.Contains(errStr, "topic not found") ||
+		strings.Contains(errStr, "invalid topic") ||
+		strings.Contains(errStr, "group id not found") ||
+		strings.Contains(errStr, "illegal generation") ||
+		strings.Contains(errStr, "unknown member id")
 }
