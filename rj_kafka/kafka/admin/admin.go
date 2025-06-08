@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/segmentio/kafka-go"
@@ -133,15 +132,6 @@ func (a *Admin) CreateTopic(ctx context.Context, topic TopicConfig) error {
 		return fmt.Errorf("failed to create topic %s: %v", topic.Name, err)
 	}
 
-	return nil
-}
-
-// DeleteTopic 刪除主題
-func (a *Admin) DeleteTopic(ctx context.Context, topicName string) error {
-	err := a.conn.DeleteTopics(topicName)
-	if err != nil {
-		return fmt.Errorf("failed to delete topic %s: %v", topicName, err)
-	}
 	return nil
 }
 
@@ -296,51 +286,4 @@ func (a *Admin) GetTopicConfig(ctx context.Context, topicName string) (map[strin
 	}
 
 	return make(map[string]string), nil
-}
-
-// PurgeCluster 完全清除 Kafka 集群的所有資料
-// 這個操作會刪除所有 topics，請謹慎使用
-func (a *Admin) PurgeCluster(ctx context.Context) error {
-	// 1. 列出所有 topics
-	topics, err := a.ListTopics(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to list topics: %v", err)
-	}
-
-	// 2. 刪除所有 topics
-	for _, topic := range topics {
-		// 跳過內部 topics
-		if strings.HasPrefix(topic, "__") {
-			continue
-		}
-		if err := a.DeleteTopic(ctx, topic); err != nil {
-			return fmt.Errorf("failed to delete topic %s: %v", topic, err)
-		}
-	}
-
-	// 3. 等待 topics 完全刪除
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
-		remainingTopics, err := a.ListTopics(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to check remaining topics: %v", err)
-		}
-
-		// 檢查是否還有非內部 topics
-		hasUserTopics := false
-		for _, topic := range remainingTopics {
-			if !strings.HasPrefix(topic, "__") {
-				hasUserTopics = true
-				break
-			}
-		}
-
-		if !hasUserTopics {
-			return nil
-		}
-
-		time.Sleep(time.Second)
-	}
-
-	return fmt.Errorf("timeout waiting for topics to be deleted")
 }

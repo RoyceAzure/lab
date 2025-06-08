@@ -20,12 +20,12 @@ func TestProducerConsumerIntegration(t *testing.T) {
 	// 1. 設置測試配置
 	cfg := &config.Config{
 		Brokers:        testClusterConfig.Cluster.Brokers,
-		Topic:          testClusterConfig.Topics[0].Name, // 使用 test-basic-topic
-		ConsumerGroup:  "test-group",
+		Topic:          testClusterConfig.Topics[0].Name, // 使用動態創建的 topic
+		ConsumerGroup:  fmt.Sprintf("test-group-%s-%d", t.Name(), time.Now().UnixNano()),
 		RetryAttempts:  3,
 		BatchTimeout:   time.Second,
 		BatchSize:      1,
-		RequiredAcks:   -1,
+		RequiredAcks:   1,
 		CommitInterval: time.Second,
 	}
 
@@ -137,12 +137,12 @@ func TestProducerConsumerWithLargeMessages(t *testing.T) {
 	// 配置
 	cfg := &config.Config{
 		Brokers:        testClusterConfig.Cluster.Brokers,
-		Topic:          testClusterConfig.Topics[1].Name, // 使用 test-large-topic
-		ConsumerGroup:  "test-large-group",
+		Topic:          testClusterConfig.Topics[0].Name, // 使用動態創建的 topic
+		ConsumerGroup:  fmt.Sprintf("test-large-group-%s-%d", t.Name(), time.Now().UnixNano()),
 		RetryAttempts:  3,
 		BatchTimeout:   time.Second,
 		BatchSize:      100,
-		RequiredAcks:   -1,
+		RequiredAcks:   1,
 		CommitInterval: time.Second,
 	}
 
@@ -168,7 +168,7 @@ func TestProducerConsumerWithLargeMessages(t *testing.T) {
 	msgChan, errChan := c.Consume(ctx)
 
 	// 生成和發送大量測試數據
-	producerMessageCount := 100
+	producerMessageCount := 10000
 	messages := make([]message.Message, 0, producerMessageCount)
 	producerDone := make(chan struct{})
 
@@ -252,6 +252,7 @@ func TestProducerConsumerWithLargeMessages(t *testing.T) {
 	}
 }
 
+// 測試一筆一筆發送 有夠慢	完全無法使用  使用上使用batch發送
 func TestProducerConsumerWithLargeMessagesOneByOne(t *testing.T) {
 	cleanup := setupTest(t)
 	defer cleanup()
@@ -259,12 +260,12 @@ func TestProducerConsumerWithLargeMessagesOneByOne(t *testing.T) {
 	// 配置
 	cfg := &config.Config{
 		Brokers:        testClusterConfig.Cluster.Brokers,
-		Topic:          testClusterConfig.Topics[1].Name, // 使用 test-large-topic
-		ConsumerGroup:  "test-large-group",
+		Topic:          testClusterConfig.Topics[0].Name, // 使用動態創建的 topic
+		ConsumerGroup:  fmt.Sprintf("test-large-group-%s-%d", t.Name(), time.Now().UnixNano()),
 		RetryAttempts:  3,
 		BatchTimeout:   time.Second,
 		BatchSize:      100,
-		RequiredAcks:   -1,
+		RequiredAcks:   1,
 		CommitInterval: time.Second,
 	}
 

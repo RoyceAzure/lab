@@ -3,7 +3,6 @@ package producer
 import (
 	"context"
 	"log"
-	"net"
 	"sync/atomic"
 	"time"
 
@@ -22,14 +21,14 @@ type Producer interface {
 	Close() error
 }
 
-// kafkaProducer implements the Producer interface
+// 同步模式，會block到所有消息都寫入
 type kafkaProducer struct {
 	writer *kafka.Writer
 	cfg    *config.Config
 	closed atomic.Bool
 }
 
-// New creates a new Kafka producer
+// 目前默認是同步模式，會block到所有消息都寫入
 func New(cfg *config.Config) (Producer, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -41,31 +40,15 @@ func New(cfg *config.Config) (Producer, error) {
 		Balancer:     &kafka.LeastBytes{},
 		BatchSize:    cfg.BatchSize,
 		BatchTimeout: cfg.BatchTimeout,
-		RequiredAcks: kafka.RequiredAcks(cfg.RequiredAcks),
+		WriteTimeout: 5 * time.Second, // 添加寫入超時
+		MaxAttempts:  cfg.RetryAttempts,
 		Async:        false,
-
-		// 重試機制設置
-		MaxAttempts: cfg.RetryAttempts, // 最大重試次數
-
-		// 重連機制設置
-		Transport: &kafka.Transport{
-			Dial: func(ctx context.Context, network string, address string) (net.Conn, error) {
-				dialer := &kafka.Dialer{
-					Timeout:   10 * time.Second, // 連接超時
-					DualStack: true,             // 支援 IPv4/IPv6
-					KeepAlive: 30 * time.Second, // TCP keepalive
-				}
-				return dialer.DialContext(ctx, network, address)
-			},
-		},
+		RequiredAcks: kafka.RequiredAcks(cfg.RequiredAcks),
 
 		// 錯誤處理
 		ErrorLogger: kafka.LoggerFunc(func(msg string, args ...interface{}) {
 			log.Printf("kafka producer error: "+msg, args...)
 		}),
-
-		// 壓縮設置
-		Compression: kafka.Snappy,
 	}
 
 	return &kafkaProducer{
