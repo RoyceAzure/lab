@@ -75,7 +75,8 @@ func TestProducerConsumerIntegration(t *testing.T) {
 	defer cancel()
 
 	// 6. 啟動 consumer
-	msgChan, errChan := c.Consume(ctx)
+	msgChan, errChan, err := c.Consume(ctx)
+	assert.NoError(t, err, "Should consume messages")
 
 	// 7. 發送消息
 	err = p.Produce(ctx, testMessages)
@@ -165,7 +166,8 @@ func TestProducerConsumerWithLargeMessages(t *testing.T) {
 	defer cancel()
 
 	// 啟動 consumer
-	msgChan, errChan := c.Consume(ctx)
+	msgChan, errChan, err := c.Consume(ctx)
+	assert.NoError(t, err, "Should consume messages")
 
 	// 生成和發送大量測試數據
 	producerMessageCount := 10000
@@ -288,7 +290,8 @@ func TestProducerConsumerWithLargeMessagesOneByOne(t *testing.T) {
 	defer cancel()
 
 	// 啟動 consumer
-	msgChan, errChan := c.Consume(ctx)
+	msgChan, errChan, err := c.Consume(ctx)
+	assert.NoError(t, err, "Should consume messages")
 
 	// 生成和發送大量測試數據
 	producerMessageCount := 100
@@ -413,7 +416,8 @@ func TestBrokerFailureRecovery(t *testing.T) {
 	defer cancel()
 
 	// 啟動 consumer
-	msgChan, errChan := c.Consume(ctx)
+	msgChan, errChan, err := c.Consume(ctx)
+	assert.NoError(t, err, "Should consume messages")
 
 	// 準備測試消息
 	messages := []message.Message{
@@ -590,7 +594,8 @@ func TestConsumerRebalancing(t *testing.T) {
 	defer consumer1.Close()
 
 	// 啟動第一個消費者
-	msgChan1, errChan1 := consumer1.Consume(ctx)
+	msgChan1, errChan1, err := consumer1.Consume(ctx)
+	assert.NoError(t, err, "Should consume messages")
 
 	// 發送一些初始消息
 	p, err := producer.New(cfg)
@@ -617,7 +622,8 @@ func TestConsumerRebalancing(t *testing.T) {
 	defer consumer2.Close()
 
 	// 啟動第二個消費者
-	msgChan2, errChan2 := consumer2.Consume(ctx)
+	msgChan2, errChan2, err := consumer2.Consume(ctx)
+	assert.NoError(t, err, "Should consume messages")
 
 	// 發送更多消息
 	additionalMessages := make([]message.Message, 10)

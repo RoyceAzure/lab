@@ -77,7 +77,10 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	// 8. 啟動 Consumer
-	msgChan, errChan := c.Consume(ctx)
+	msgChan, errChan, err := c.Consume(ctx)
+	if err != nil {
+		log.Fatalf("Failed to consume messages: %v", err)
+	}
 
 	// 9. 主要處理邏輯
 	go func() {
@@ -107,6 +110,7 @@ func main() {
 	<-sigChan
 	log.Println("Shutting down...")
 	cancel()
+	c.Close()
 
 	// 給一些時間讓現有的操作完成
 	time.Sleep(time.Second * 2)

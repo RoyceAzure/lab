@@ -56,7 +56,8 @@ func TestProducerConsumerModule(t *testing.T) {
 	defer cancel()
 
 	// 開始消費消息
-	msgChan, errChan := c.Consume(ctxTimeout)
+	msgChan, errChan, err := c.Consume(ctxTimeout)
+	assert.NoError(t, err, "Should consume messages")
 
 	// 讀取並驗證消息
 	receivedMsgs := make([]message.Message, 0)

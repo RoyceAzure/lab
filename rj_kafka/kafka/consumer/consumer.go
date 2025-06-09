@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -34,23 +33,21 @@ func (e *ConsumerError) Error() string {
 
 // Consumer interface defines the methods that a Kafka consumer must implement
 type Consumer interface {
-	Consume(ctx context.Context) (<-chan message.Message, <-chan error)
+	Consume(ctx context.Context) (<-chan message.Message, <-chan error, error)
 	CommitMessages(ctx context.Context, msgs ...message.Message) error
 	Close() error
 }
 
-// kafkaConsumer implements the Consumer interface
+// 實現錯誤恢復機制
+// 使用者只要於呼叫Consumer後，不斷重msgCh, errCh 接收訊息即可
+// 只有當使用者呼叫Close()，才會關閉msgCh, errCh
 type kafkaConsumer struct {
-	reader        *kafka.Reader
-	cfg           *config.Config
-	closed        atomic.Bool
-	consuming     atomic.Bool // 控制是否正在消費
-	retryAttempts atomic.Int32
-	lastError     atomic.Value
-	msgCh         chan message.Message
-	errCh         chan error
-	stopCh        chan struct{} // 用於停止消費循環
-	mu            sync.Mutex    // 保護重要操作
+	reader    *kafka.Reader
+	cfg       *config.Config
+	closed    atomic.Bool          // 控制是否已關閉
+	consuming atomic.Bool          // 控制是否正在消費
+	msgCh     chan message.Message //回傳訊息channel
+	errCh     chan error           //回傳錯誤channel
 }
 
 // New creates a new Kafka consumer
@@ -87,89 +84,31 @@ func New(cfg *config.Config) (Consumer, error) {
 		ReadBackoffMax:   cfg.RetryBackoffMax,
 	})
 
-	return &kafkaConsumer{
+	consumer := &kafkaConsumer{
 		reader: reader,
 		cfg:    cfg,
 		msgCh:  make(chan message.Message),
 		errCh:  make(chan error),
-		stopCh: make(chan struct{}),
-	}, nil
-}
-
-// calculateBackoff 計算下一次重試的等待時間
-func (c *kafkaConsumer) calculateBackoff(attempt int32) time.Duration {
-	backoff := float64(c.cfg.RetryBackoffMin)
-	for i := int32(0); i < attempt && backoff < float64(c.cfg.RetryBackoffMax); i++ {
-		backoff *= c.cfg.RetryBackoffFactor
-	}
-	if backoff > float64(c.cfg.RetryBackoffMax) {
-		backoff = float64(c.cfg.RetryBackoffMax)
-	}
-	return time.Duration(backoff)
-}
-
-// resetConnection 重置連接
-func (c *kafkaConsumer) resetConnection(ctx context.Context) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	// 關閉當前的 reader
-	if err := c.reader.Close(); err != nil {
-		log.Printf("Error closing reader during reset: %v", err)
 	}
 
-	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:        c.cfg.Brokers,
-		Topic:          c.cfg.Topic,
-		GroupID:        c.cfg.ConsumerGroup,
-		MinBytes:       c.cfg.ConsumerMinBytes,
-		MaxBytes:       c.cfg.ConsumerMaxBytes,
-		MaxWait:        c.cfg.ConsumerMaxWait,
-		CommitInterval: c.cfg.CommitInterval,
-		Dialer: &kafka.Dialer{
-			Timeout:   c.cfg.RetryBackoffMax,
-			DualStack: true,
-			KeepAlive: 30 * time.Second,
-		},
-	})
-
-	c.reader = reader
-	return nil
+	return consumer, nil
 }
 
 // Consume implements the Consumer interface
-func (c *kafkaConsumer) Consume(ctx context.Context) (<-chan message.Message, <-chan error) {
+func (c *kafkaConsumer) Consume(ctx context.Context) (<-chan message.Message, <-chan error, error) {
 	// 檢查是否已關閉
 	if c.closed.Load() {
-		c.errCh <- &ConsumerError{
-			Fatal: true,
-			Err:   errors.ErrClientClosed,
-		}
-		close(c.msgCh)
-		close(c.errCh)
-		return c.msgCh, c.errCh
+		return nil, nil, errors.ErrClientClosed
 	}
 
 	// 確保只能同時執行一個消費循環
 	if !c.consuming.CompareAndSwap(false, true) {
-		c.errCh <- &ConsumerError{
-			Fatal: true,
-			Err:   errors.ErrConsumerAlreadyRunning,
-		}
-		return c.msgCh, c.errCh
+		return nil, nil, errors.ErrConsumerAlreadyRunning
 	}
 
-	// 重置 channels
-	c.mu.Lock()
-	if c.stopCh == nil {
-		c.stopCh = make(chan struct{})
-	}
-	c.mu.Unlock()
-
-	// 啟動消費循環
 	go c.consumeLoop(ctx)
 
-	return c.msgCh, c.errCh
+	return c.msgCh, c.errCh, nil
 }
 
 // consumeLoop 處理消費循環
@@ -184,70 +123,47 @@ func (c *kafkaConsumer) consumeLoop(ctx context.Context) {
 		}
 	}()
 
+	log.Println("consumeLoop start")
 	for {
-		select {
-		case <-ctx.Done():
+		if c.closed.Load() {
 			return
-		case <-c.stopCh:
+		}
+
+		msg, err := c.reader.ReadMessage(ctx)
+		if c.closed.Load() {
 			return
-		default:
-			if c.closed.Load() {
-				c.errCh <- &ConsumerError{
-					Fatal: true,
-					Err:   errors.ErrClientClosed,
-				}
+		}
+
+		if err != nil {
+			// 處理錯誤
+			kafkaErr := errors.NewKafkaError("Consume", c.cfg.Topic, err)
+			isFatal := errors.IsFatalError(err)
+
+			// 發送錯誤到錯誤通道
+			c.errCh <- &ConsumerError{
+				Fatal: isFatal,
+				Err:   kafkaErr,
+			}
+
+			// 如果是致命錯誤，關閉消費者
+			if isFatal {
+				c.close()
 				return
 			}
 
-			msg, err := c.reader.ReadMessage(ctx)
-			if err != nil {
-				kafkaErr := errors.NewKafkaError("Consume", c.cfg.Topic, err)
-
-				// 1. 先檢查是否為致命錯誤
-				if errors.IsFatalError(err) {
-					c.errCh <- &ConsumerError{
-						Fatal: true,
-						Err:   kafkaErr,
-					}
-					return
-				}
-
-				// 2. 檢查是否為連接錯誤
-				if errors.IsConnectionError(err) {
-					// 嘗試重置連接
-					if resetErr := c.resetConnection(ctx); resetErr != nil {
-						c.errCh <- &ConsumerError{
-							Fatal: true,
-							Err:   fmt.Errorf("failed to reset connection: %w", resetErr),
-						}
-						return
-					}
-
-					// 發送非致命錯誤通知
-					c.errCh <- &ConsumerError{
-						Fatal: false,
-						Err:   kafkaErr,
-					}
-
-					// 等待一段時間後繼續
-					select {
-					case <-c.stopCh:
-						return
-					case <-time.After(c.cfg.ReconnectWaitTime):
-						continue
-					}
-				}
-
-				// 3. 其他錯誤，通知後繼續
-				c.errCh <- &ConsumerError{
-					Fatal: false,
-					Err:   kafkaErr,
-				}
+			// 對於非致命錯誤，讓 kafka-go 的重試機制處理
+			// 我們只需要短暫等待後繼續
+			if errors.IsConnectionError(err) {
+				time.Sleep(c.cfg.RetryBackoffMin)
 				continue
 			}
 
-			c.msgCh <- message.FromKafkaMessage(msg)
+			// 其他類型的錯誤，繼續嘗試
+			continue
 		}
+
+		// 成功讀取消息，發送到消息通道
+		c.msgCh <- message.FromKafkaMessage(msg)
 	}
 }
 
@@ -270,25 +186,21 @@ func (c *kafkaConsumer) CommitMessages(ctx context.Context, msgs ...message.Mess
 	return nil
 }
 
-// Close implements the Consumer interface
-func (c *kafkaConsumer) Close() error {
+// close 關閉msgCh, errCh, 設置旗號
+// 以下情況會自動呼叫close:
+// 1. 使用者呼叫Close()
+// 2. 消費者發生致命錯誤
+// 3. 消費者於重新連接時發生錯誤
+func (c *kafkaConsumer) close() error {
 	if !c.closed.CompareAndSwap(false, true) {
 		return nil
 	}
-
-	c.mu.Lock()
-	if c.stopCh != nil {
-		close(c.stopCh)
-		c.stopCh = nil
-	}
-	c.mu.Unlock()
-
-	// 等待消費循環結束
-	for c.consuming.Load() {
-		time.Sleep(100 * time.Millisecond)
-	}
-
+	c.consuming.Store(false)
 	close(c.msgCh)
 	close(c.errCh)
 	return c.reader.Close()
+}
+
+func (c *kafkaConsumer) Close() error {
+	return c.close()
 }

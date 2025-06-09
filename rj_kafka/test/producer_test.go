@@ -13,7 +13,7 @@ func TestProducerConnection(t *testing.T) {
 	// 配置 writer
 	w := &kafka.Writer{
 		Addr:         kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
-		Topic:        "test-large-topic",
+		Topic:        "test-topic",
 		Balancer:     &kafka.LeastBytes{},
 		BatchTimeout: time.Second,
 		// 設置較短的超時時間以快速發現問題
