@@ -48,6 +48,11 @@ type kafkaConsumer struct {
 	consuming atomic.Bool          // 控制是否正在消費
 	msgCh     chan message.Message //回傳訊息channel
 	errCh     chan error           //回傳錯誤channel
+
+	// 錯誤聚合
+	lastError     atomic.Value // 最後一次錯誤
+	errorCount    atomic.Int32 // 相同錯誤的次數
+	lastErrorTime atomic.Value // 最後一次錯誤的時間
 }
 
 // New creates a new Kafka consumer
@@ -74,7 +79,7 @@ func New(cfg *config.Config) (Consumer, error) {
 
 		// 錯誤處理
 		ErrorLogger: kafka.LoggerFunc(func(msg string, args ...interface{}) {
-			log.Printf("Kafka Reader Error: "+msg, args...)
+			// 不處理，讓我們自己的錯誤處理機制來處理
 		}),
 
 		// 讀取重試設定
@@ -91,7 +96,28 @@ func New(cfg *config.Config) (Consumer, error) {
 		errCh:  make(chan error),
 	}
 
+	consumer.lastErrorTime.Store(time.Now())
 	return consumer, nil
+}
+
+// shouldReportError 判斷是否需要報告錯誤
+func (c *kafkaConsumer) shouldReportError(err error) bool {
+	lastErr := c.lastError.Load()
+	lastErrTime := c.lastErrorTime.Load().(time.Time)
+
+	// 如果是新的錯誤類型，或者距離上次錯誤已經超過30秒
+	if lastErr == nil || lastErr.(error).Error() != err.Error() || time.Since(lastErrTime) > 30*time.Second {
+		c.lastError.Store(err)
+		c.lastErrorTime.Store(time.Now())
+		c.errorCount.Store(1)
+		return true
+	}
+
+	// 累加錯誤次數
+	count := c.errorCount.Add(1)
+
+	// 每累積10次錯誤才報告一次
+	return count%10 == 0
 }
 
 // Consume implements the Consumer interface
@@ -139,10 +165,12 @@ func (c *kafkaConsumer) consumeLoop(ctx context.Context) {
 			kafkaErr := errors.NewKafkaError("Consume", c.cfg.Topic, err)
 			isFatal := errors.IsFatalError(err)
 
-			// 發送錯誤到錯誤通道
-			c.errCh <- &ConsumerError{
-				Fatal: isFatal,
-				Err:   kafkaErr,
+			// 只有在需要報告錯誤時才發送到錯誤通道
+			if c.shouldReportError(kafkaErr) {
+				c.errCh <- &ConsumerError{
+					Fatal: isFatal,
+					Err:   kafkaErr,
+				}
 			}
 
 			// 如果是致命錯誤，關閉消費者
@@ -152,13 +180,11 @@ func (c *kafkaConsumer) consumeLoop(ctx context.Context) {
 			}
 
 			// 對於非致命錯誤，讓 kafka-go 的重試機制處理
-			// 我們只需要短暫等待後繼續
 			if errors.IsConnectionError(err) {
 				time.Sleep(c.cfg.RetryBackoffMin)
 				continue
 			}
 
-			// 其他類型的錯誤，繼續嘗試
 			continue
 		}
 
