@@ -1,0 +1,20 @@
+version: '3'
+services:
+  postgres:
+    image: postgres:latest
+    container_name: cqrs_postgres
+    environment:
+      - POSTGRES_DB=lab_cqrs
+      - POSTGRES_USER=royce
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_HOST=localhost
+      - POSTGRES_PORT=5432
+    ports:
+      - "5432:5432"
+    volumes:
+      - cqrs_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  cqrs_data:
+    driver: local
