@@ -1,0 +1,36 @@
+version: '3'
+services:
+  postgres:
+    image: postgres:latest
+    container_name: cqrs_postgres
+    environment:
+      - POSTGRES_DB=lab_cqrs
+      - POSTGRES_USER=royce
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_HOST=localhost
+      - POSTGRES_PORT=5432
+    ports:
+      - "5432:5432"
+    volumes:
+      - cqrs_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  eventstore:
+    image: eventstore/eventstore:latest
+    container_name: cqrs_eventstore
+    ports:
+      - "2113:2113"  # HTTP API
+      - "1113:1113"  # TCP API
+    volumes:
+      - eventstore_data:/var/lib/eventstore
+    environment:
+      - EVENTSTORE_CLUSTER_SIZE=1
+      - EVENTSTORE_RUN_PROJECTIONS=All
+      - EVENTSTORE_START_STANDARD_PROJECTIONS=true
+      - EVENTSTORE_HTTP_PORT=2113
+      - EVENTSTORE_ENABLE_ATOM_PUB_OVER_HTTP=true
+    restart: unless-stopped
+
+volumes:
+  cqrs_data:
+  eventstore_data:
