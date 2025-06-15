@@ -19,19 +19,9 @@ type UserRepoTestSuite struct {
 
 // SetupSuite 在測試套件開始前執行
 func (suite *UserRepoTestSuite) SetupSuite() {
-	// 獲取資料庫配置
-	cfg, err := config.GetPGConfig()
+	db, err := GetDbConn("lab_cqrs", "localhost", "5432", "royce", "password")
 	require.NoError(suite.T(), err)
-
-	// 連接到資料庫
-	db, err := GetDbConn(cfg.DbName, cfg.DbHost, cfg.DbPort, cfg.DbUser, cfg.DbPas)
-	require.NoError(suite.T(), err)
-
-	// 初始化資料庫
 	dbDao := NewDbDao(db)
-	err = dbDao.InitMigrate()
-	require.NoError(suite.T(), err)
-
 	userRepo := NewUserRepo(dbDao)
 	suite.db = db
 	suite.userRepo = userRepo

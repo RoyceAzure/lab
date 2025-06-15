@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/RoyceAzure/lab/cqrs/config"
 	"github.com/RoyceAzure/lab/cqrs/infra/repository/db/model"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"gorm.io/gorm"
@@ -19,19 +19,10 @@ type ProductRepoTestSuite struct {
 
 // SetupSuite 在測試套件開始前執行
 func (suite *ProductRepoTestSuite) SetupSuite() {
-	// 獲取資料庫配置
-	cfg, err := config.GetPGConfig()
+	db, err := GetDbConn("lab_cqrs", "localhost", "5432", "royce", "password")
 	require.NoError(suite.T(), err)
 
-	// 連接到資料庫
-	db, err := GetDbConn(cfg.DbName, cfg.DbHost, cfg.DbPort, cfg.DbUser, cfg.DbPas)
-	require.NoError(suite.T(), err)
-
-	// 初始化資料庫
 	dbDao := NewDbDao(db)
-	err = dbDao.InitMigrate()
-	require.NoError(suite.T(), err)
-
 	productRepo := NewProductRepo(dbDao)
 	suite.db = db
 	suite.productRepo = productRepo
@@ -40,206 +31,276 @@ func (suite *ProductRepoTestSuite) SetupSuite() {
 // SetupTest 在每個測試前執行
 func (suite *ProductRepoTestSuite) SetupTest() {
 	// 清空資料表
+	suite.db.Exec("DELETE FROM order_items")
 	suite.db.Exec("DELETE FROM products")
 }
 
+// TearDownSuite 在測試套件結束後執行
 func (suite *ProductRepoTestSuite) TearDownSuite() {
-	// 清理測試資料（可選）
-	db, err := suite.db.DB()
-	require.NoError(suite.T(), err)
-	db.Close()
+	sqlDB, _ := suite.db.DB()
+	sqlDB.Close()
 }
 
-func (suite *ProductRepoTestSuite) TestCreateAndGetProduct() {
-	// 創建商品
-	newProduct := &model.Product{
+func (suite *ProductRepoTestSuite) TestCreateProduct() {
+	product := &model.Product{
 		Code:        "TEST001",
 		Name:        "Test Product",
-		Price:       "5000", // 50.00 的 cent 表示
-		Stock:       100,
+		Price:       decimal.NewFromFloat(100.0),
+		Stock:       10,
 		Category:    "Test",
 		Description: "Test Description",
 	}
-	err := suite.productRepo.CreateProduct(newProduct)
-	require.NoError(suite.T(), err, "Failed to create product")
-	require.NotZero(suite.T(), newProduct.ProductID, "Product ID should be set")
 
-	// 根據 ID 查詢
-	retrievedProduct, err := suite.productRepo.GetProductByID(newProduct.ProductID)
-	require.NoError(suite.T(), err, "Failed to get product by ID")
-	require.Equal(suite.T(), newProduct.Code, retrievedProduct.Code, "Product code mismatch")
+	err := suite.productRepo.CreateProduct(product)
+
+	require.NoError(suite.T(), err)
+	require.NotZero(suite.T(), product.ProductID)
+	require.False(suite.T(), product.CreatedAt.IsZero())
 }
 
-func (suite *ProductRepoTestSuite) TestUpdateStock() {
-	// 創建商品
-	newProduct := &model.Product{
-		Code:        "TEST002",
+func (suite *ProductRepoTestSuite) TestCreateProduct_DuplicateCode() {
+	product1 := &model.Product{
+		Code:        "TEST001",
+		Name:        "Test Product 1",
+		Price:       decimal.NewFromFloat(100.0),
+		Stock:       10,
+		Category:    "Test",
+		Description: "Test Description 1",
+	}
+
+	product2 := &model.Product{
+		Code:        "TEST001", // 重複的 code
 		Name:        "Test Product 2",
-		Price:       "10000", // 100.00 的 cent 表示
-		Stock:       50,
+		Price:       decimal.NewFromFloat(200.0),
+		Stock:       20,
 		Category:    "Test",
 		Description: "Test Description 2",
 	}
-	err := suite.productRepo.CreateProduct(newProduct)
-	require.NoError(suite.T(), err, "Failed to create product")
-	require.NotZero(suite.T(), newProduct.ProductID, "Product ID should be set")
 
-	// 更新庫存
-	err = suite.productRepo.UpdateStock(newProduct.ProductID, 75)
-	require.NoError(suite.T(), err, "Failed to update stock")
+	err1 := suite.productRepo.CreateProduct(product1)
+	err2 := suite.productRepo.CreateProduct(product2)
 
-	// 驗證更新後的庫存
-	retrievedProduct, err := suite.productRepo.GetProductByID(newProduct.ProductID)
-	require.NoError(suite.T(), err, "Failed to get product by ID")
-	require.Equal(suite.T(), uint(75), retrievedProduct.Stock, "Stock should be updated to 75")
+	require.NoError(suite.T(), err1)
+	require.Error(suite.T(), err2) // 應該會失敗
 }
 
-// Benchmark 測試
-func BenchmarkGetAllProducts(b *testing.B) {
-	// 連接到資料庫
-	db, err := GetDbConn("lab_cqrs", "localhost", "5432", "royce", "password")
-	require.NoError(b, err)
+func (suite *ProductRepoTestSuite) TestGetProductByID() {
+	product := &model.Product{
+		Code:        "TEST001",
+		Name:        "Test Product",
+		Price:       decimal.NewFromFloat(100.0),
+		Stock:       10,
+		Category:    "Test",
+		Description: "Test Description",
+	}
+	suite.productRepo.CreateProduct(product)
 
-	dbDao := NewDbDao(db)
-	repo := NewProductRepo(dbDao)
+	foundProduct, err := suite.productRepo.GetProductByID(product.ProductID)
 
-	// 插入測試數據
-	products := make([]model.Product, 1000)
-	for i := 0; i < 1000; i++ {
-		products[i] = model.Product{
-			Code:        fmt.Sprintf("TEST%d", i),
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), product.Name, foundProduct.Name)
+	require.True(suite.T(), product.Price.Equal(foundProduct.Price))
+}
+
+func (suite *ProductRepoTestSuite) TestGetProductByCode() {
+	product := &model.Product{
+		Code:        "TEST001",
+		Name:        "Test Product",
+		Price:       decimal.NewFromFloat(100.0),
+		Stock:       10,
+		Category:    "Test",
+		Description: "Test Description",
+	}
+	suite.productRepo.CreateProduct(product)
+
+	foundProduct, err := suite.productRepo.GetProductByCode("TEST001")
+
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), product.Name, foundProduct.Name)
+	require.True(suite.T(), product.Price.Equal(foundProduct.Price))
+}
+
+func (suite *ProductRepoTestSuite) TestGetAllProducts() {
+	// 創建多個商品
+	products := []*model.Product{
+		{
+			Code:        "TEST001",
+			Name:        "Test Product 1",
+			Price:       decimal.NewFromFloat(100.0),
+			Stock:       10,
+			Category:    "Test",
+			Description: "Test Description 1",
+		},
+		{
+			Code:        "TEST002",
+			Name:        "Test Product 2",
+			Price:       decimal.NewFromFloat(200.0),
+			Stock:       20,
+			Category:    "Test",
+			Description: "Test Description 2",
+		},
+	}
+
+	for _, product := range products {
+		suite.productRepo.CreateProduct(product)
+	}
+
+	allProducts, err := suite.productRepo.GetAllProducts()
+
+	require.NoError(suite.T(), err)
+	require.Len(suite.T(), allProducts, 2)
+}
+
+func (suite *ProductRepoTestSuite) TestUpdateProduct() {
+	product := &model.Product{
+		Code:        "TEST001",
+		Name:        "Test Product",
+		Price:       decimal.NewFromFloat(100.0),
+		Stock:       10,
+		Category:    "Test",
+		Description: "Test Description",
+	}
+	suite.productRepo.CreateProduct(product)
+
+	// 更新商品
+	product.Name = "Updated Product"
+	product.Price = decimal.NewFromFloat(150.0)
+	err := suite.productRepo.UpdateProduct(product)
+	require.NoError(suite.T(), err)
+
+	// 驗證更新
+	updatedProduct, _ := suite.productRepo.GetProductByID(product.ProductID)
+	require.Equal(suite.T(), "Updated Product", updatedProduct.Name)
+	require.True(suite.T(), decimal.NewFromFloat(150.0).Equal(updatedProduct.Price))
+}
+
+func (suite *ProductRepoTestSuite) TestUpdateProductFields() {
+	product := &model.Product{
+		Code:        "TEST001",
+		Name:        "Test Product",
+		Price:       decimal.NewFromFloat(100.0),
+		Stock:       10,
+		Category:    "Test",
+		Description: "Test Description",
+	}
+	suite.productRepo.CreateProduct(product)
+
+	updates := map[string]interface{}{
+		"name":  "Updated Product",
+		"price": decimal.NewFromFloat(150.0),
+	}
+
+	err := suite.productRepo.UpdateProductFields(product.ProductID, updates)
+	require.NoError(suite.T(), err)
+
+	// 驗證更新
+	updatedProduct, _ := suite.productRepo.GetProductByID(product.ProductID)
+	require.Equal(suite.T(), "Updated Product", updatedProduct.Name)
+	require.True(suite.T(), decimal.NewFromFloat(150.0).Equal(updatedProduct.Price))
+}
+
+func (suite *ProductRepoTestSuite) TestDeleteProduct() {
+	product := &model.Product{
+		Code:        "TEST001",
+		Name:        "Test Product",
+		Price:       decimal.NewFromFloat(100.0),
+		Stock:       10,
+		Category:    "Test",
+		Description: "Test Description",
+	}
+	suite.productRepo.CreateProduct(product)
+
+	err := suite.productRepo.DeleteProduct(product.ProductID)
+	require.NoError(suite.T(), err)
+
+	// 驗證軟刪除
+	foundProduct, err := suite.productRepo.GetProductByID(product.ProductID)
+	require.Error(suite.T(), err)
+	require.Nil(suite.T(), foundProduct)
+}
+
+func (suite *ProductRepoTestSuite) TestHardDeleteProduct() {
+	product := &model.Product{
+		Code:        "TEST001",
+		Name:        "Test Product",
+		Price:       decimal.NewFromFloat(100.0),
+		Stock:       10,
+		Category:    "Test",
+		Description: "Test Description",
+	}
+	suite.productRepo.CreateProduct(product)
+
+	err := suite.productRepo.HardDeleteProduct(product.ProductID)
+	require.NoError(suite.T(), err)
+
+	// 驗證硬刪除
+	foundProduct, err := suite.productRepo.GetProductByID(product.ProductID)
+	require.Error(suite.T(), err)
+	require.Nil(suite.T(), foundProduct)
+}
+
+func (suite *ProductRepoTestSuite) TestGetProductsPaginated() {
+	// 創建 25 個商品
+	for i := 1; i <= 25; i++ {
+		product := &model.Product{
+			Code:        fmt.Sprintf("TEST%03d", i),
 			Name:        fmt.Sprintf("Test Product %d", i),
-			Price:       fmt.Sprintf("%d", 5000+i),
-			Stock:       uint(100 + i),
+			Price:       decimal.NewFromFloat(float64(i * 100)),
+			Stock:       uint(i * 10),
 			Category:    "Test",
 			Description: fmt.Sprintf("Test Description %d", i),
 		}
-	}
-	err = repo.CreateProductsBatch(products)
-	if err != nil {
-		b.Fatal("Failed to create test products:", err)
+		suite.productRepo.CreateProduct(product)
 	}
 
-	// 執行 Benchmark
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, err := repo.GetAllProducts()
-		if err != nil {
-			b.Error("Benchmark GetAllProducts failed:", err)
-		}
-	}
+	// 測試第一頁，每頁 10 筆
+	products, total, err := suite.productRepo.GetProductsPaginated(1, 10)
+	require.NoError(suite.T(), err)
+	require.Len(suite.T(), products, 10)
+	require.Equal(suite.T(), int64(25), total)
+
+	// 測試第三頁，每頁 10 筆
+	products, total, err = suite.productRepo.GetProductsPaginated(3, 10)
+	require.NoError(suite.T(), err)
+	require.Len(suite.T(), products, 5) // 第三頁只有 5 筆
+	require.Equal(suite.T(), int64(25), total)
 }
 
-func BenchmarkSearchProductsByName(b *testing.B) {
-	// 連接到資料庫
-	db, err := GetDbConn("lab_cqrs", "localhost", "5432", "royce", "password")
-	require.NoError(b, err)
-
-	dbDao := NewDbDao(db)
-	repo := NewProductRepo(dbDao)
-
-	// 插入測試數據
-	products := make([]model.Product, 1000)
-	for i := 0; i < 1000; i++ {
-		products[i] = model.Product{
-			Code:        fmt.Sprintf("TEST%d", i),
-			Name:        fmt.Sprintf("Test Product %d", i),
-			Price:       fmt.Sprintf("%d", 5000+i),
-			Stock:       uint(100 + i),
-			Category:    "Test",
-			Description: fmt.Sprintf("Test Description %d", i),
-		}
-	}
-	err = repo.CreateProductsBatch(products)
-	if err != nil {
-		b.Fatal("Failed to create test products:", err)
-	}
-
-	// 執行 Benchmark
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, err := repo.SearchProductsByName("Test")
-		if err != nil {
-			b.Error("Benchmark SearchProductsByName failed:", err)
-		}
-	}
-	b.StopTimer()
-	repo.db.Unscoped().Delete(&model.Product{}, "code LIKE ?", "TEST%")
-}
-
-func BenchmarkGetProductsPaginated(b *testing.B) {
-	// 連接到資料庫
-	db, err := GetDbConn("lab_cqrs", "localhost", "5432", "royce", "password")
-	require.NoError(b, err)
-
-	dbDao := NewDbDao(db)
-	repo := NewProductRepo(dbDao)
-
-	// 插入測試數據
-	products := make([]model.Product, 1000)
-	for i := 0; i < 1000; i++ {
-		products[i] = model.Product{
-			Code:        fmt.Sprintf("TEST%d", i),
-			Name:        fmt.Sprintf("Test Product %d", i),
-			Price:       fmt.Sprintf("%d", 5000+i),
-			Stock:       uint(100 + i),
-			Category:    "Test",
-			Description: fmt.Sprintf("Test Description %d", i),
-		}
-	}
-	err = repo.CreateProductsBatch(products)
-	if err != nil {
-		b.Fatal("Failed to create test products:", err)
-	}
-
-	// 執行 Benchmark
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, _, err := repo.GetProductsPaginated(1, 10)
-		if err != nil {
-			b.Error("Benchmark GetProductsPaginated failed:", err)
-		}
-	}
-	b.StopTimer()
-	repo.db.Unscoped().Delete(&model.Product{}, "code LIKE ?", "TEST%")
-}
-
-func BenchmarkCreateProductsBatch(b *testing.B) {
-	// 連接到資料庫
-	db, err := GetDbConn("lab_cqrs", "localhost", "5432", "royce", "password")
-	require.NoError(b, err)
-
-	dbDao := NewDbDao(db)
-	repo := NewProductRepo(dbDao)
-
-	// 準備測試數據
-	products := make([]model.Product, 100)
-	for i := 0; i < 100; i++ {
-		products[i] = model.Product{
-			Code:        fmt.Sprintf("BATCH%d", i),
-			Name:        fmt.Sprintf("Batch Product %d", i),
-			Price:       fmt.Sprintf("%d", 5000+i),
-			Stock:       uint(100 + i),
-			Category:    "Batch",
-			Description: fmt.Sprintf("Batch Description %d", i),
-		}
-	}
-
-	// 執行 Benchmark
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		err := repo.CreateProductsBatch(products)
-		if err != nil {
-			b.Error("Benchmark CreateProductsBatch failed:", err)
-		}
-		// 清理數據以避免重複插入衝突
-		err = repo.db.Unscoped().Delete(&model.Product{}, "code LIKE ?", "BATCH%").Error
-		if err != nil {
-			b.Error("Failed to clean up batch data:", err)
-		}
-	}
-}
-
-func TestProductRepoSuite(t *testing.T) {
+// 執行測試套件
+func TestProductServiceTestSuite(t *testing.T) {
 	suite.Run(t, new(ProductRepoTestSuite))
+}
+
+// 單獨的單元測試範例
+func TestNewProductRepo(t *testing.T) {
+	db, err := GetDbConn("lab_cqrs", "localhost", "5432", "royce", "password")
+	require.NoError(t, err)
+
+	dbDao := NewDbDao(db)
+	repo := NewProductRepo(dbDao)
+
+	require.NotNil(t, repo)
+	require.Equal(t, dbDao, repo.db)
+}
+
+// 基準測試範例
+func BenchmarkCreateProduct(b *testing.B) {
+	db, err := GetDbConn("lab_cqrs", "localhost", "5432", "royce", "password")
+	require.NoError(b, err)
+
+	dbDao := NewDbDao(db)
+	repo := NewProductRepo(dbDao)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		product := &model.Product{
+			Code:        fmt.Sprintf("TEST%03d", i),
+			Name:        fmt.Sprintf("Test Product %d", i),
+			Price:       decimal.NewFromFloat(float64(i * 100)),
+			Stock:       uint(i * 10),
+			Category:    "Test",
+			Description: fmt.Sprintf("Test Description %d", i),
+		}
+		repo.CreateProduct(product)
+	}
 }
