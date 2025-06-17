@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"strconv"
 	"testing"
 
 	"github.com/RoyceAzure/lab/rj_redis/pkg/cache"
@@ -15,13 +16,24 @@ import (
 )
 
 type Product struct {
-	ProductID uint
-	Code      string
-	Name      string
-	Price     decimal.Decimal
-	Stock     uint
-	Reserved  uint
-	Category  string
+	ProductID int             `json:"product_id"`
+	Code      string          `json:"code"`
+	Name      string          `json:"name"`
+	Price     decimal.Decimal `json:"price"`
+	Stock     int             `json:"stock"`
+	Reserved  int             `json:"reserved"`
+	Category  string          `json:"category"`
+}
+
+// Equal 方法用於比較兩個 Product 是否相等
+func (p Product) Equal(other Product) bool {
+	return p.ProductID == other.ProductID &&
+		p.Code == other.Code &&
+		p.Name == other.Name &&
+		p.Price.Equal(other.Price) &&
+		p.Stock == other.Stock &&
+		p.Reserved == other.Reserved &&
+		p.Category == other.Category
 }
 
 type RedisHashTestSuite struct {
@@ -51,25 +63,25 @@ func (s *RedisHashTestSuite) SetupTest() {
 
 func (s *RedisHashTestSuite) generateRandomProduct() Product {
 	categories := []string{"Electronics", "Clothing", "Food", "Books", "Sports"}
-	productID := uint(rand.Intn(1000))
+	productID := rand.Intn(1000)
 	return Product{
 		ProductID: productID,
 		Code:      fmt.Sprintf("P%04d", productID),
 		Name:      fmt.Sprintf("Product %d", productID),
 		Price:     decimal.NewFromFloat(rand.Float64() * 1000).Round(2),
-		Stock:     uint(rand.Intn(1000)),
-		Reserved:  uint(rand.Intn(100)),
+		Stock:     rand.Intn(1000),
+		Reserved:  rand.Intn(100),
 		Category:  categories[rand.Intn(len(categories))],
 	}
 }
 
 func (s *RedisHashTestSuite) generateRandomProducts(n int) []Product {
 	categories := []string{"Electronics", "Clothing", "Food", "Books", "Sports"}
-	usedIDs := make(map[uint]struct{}, n)
+	usedIDs := make(map[int]struct{}, n)
 	products := make([]Product, 0, n)
 
 	for len(products) < n {
-		productID := uint(rand.Intn(10000)) // 增大範圍以降低碰撞
+		productID := rand.Intn(10000) // 增大範圍以降低碰撞
 		if _, exists := usedIDs[productID]; exists {
 			continue // 已存在則跳過
 		}
@@ -79,8 +91,8 @@ func (s *RedisHashTestSuite) generateRandomProducts(n int) []Product {
 			Code:      fmt.Sprintf("P%04d", productID),
 			Name:      fmt.Sprintf("Product %d", productID),
 			Price:     decimal.NewFromFloat(rand.Float64() * 1000).Round(2),
-			Stock:     uint(rand.Intn(1000)),
-			Reserved:  uint(rand.Intn(100)),
+			Stock:     rand.Intn(1000),
+			Reserved:  rand.Intn(100),
 			Category:  categories[rand.Intn(len(categories))],
 		}
 		products = append(products, product)
@@ -88,26 +100,49 @@ func (s *RedisHashTestSuite) generateRandomProducts(n int) []Product {
 	return products
 }
 
+// convertFieldsToProduct 將 map[string]string 轉換為 Product
+func (s *RedisHashTestSuite) convertFieldsToProduct(fields map[string]string) (Product, error) {
+	productID, err := strconv.Atoi(fields["product_id"])
+	if err != nil {
+		return Product{}, err
+	}
+
+	stock, err := strconv.Atoi(fields["stock"])
+	if err != nil {
+		return Product{}, err
+	}
+
+	reserved, err := strconv.Atoi(fields["reserved"])
+	if err != nil {
+		return Product{}, err
+	}
+
+	price, err := decimal.NewFromString(fields["price"])
+	if err != nil {
+		return Product{}, err
+	}
+
+	return Product{
+		ProductID: productID,
+		Code:      fields["code"],
+		Name:      fields["name"],
+		Price:     price,
+		Stock:     stock,
+		Reserved:  reserved,
+		Category:  fields["category"],
+	}, nil
+}
+
 func (s *RedisHashTestSuite) TestHashOperations() {
 	// 生成100個隨機商品
 	products := s.generateRandomProducts(100)
 
-	// 測試 HSet 和 HGet
+	// 測試 HMSet 和 HGet
 	for _, product := range products {
 		key := fmt.Sprintf("product:%d", product.ProductID)
 
-		// 設置商品資訊
-		err := s.cache.HSet(s.ctx, key, "code", product.Code)
-		require.NoError(s.T(), err)
-		err = s.cache.HSet(s.ctx, key, "name", product.Name)
-		require.NoError(s.T(), err)
-		err = s.cache.HSet(s.ctx, key, "price", product.Price.String())
-		require.NoError(s.T(), err)
-		err = s.cache.HSet(s.ctx, key, "stock", fmt.Sprintf("%d", product.Stock))
-		require.NoError(s.T(), err)
-		err = s.cache.HSet(s.ctx, key, "reserved", fmt.Sprintf("%d", product.Reserved))
-		require.NoError(s.T(), err)
-		err = s.cache.HSet(s.ctx, key, "category", product.Category)
+		// 使用 HMSet 直接設置整個商品結構
+		err := s.cache.HMSet(s.ctx, key, product)
 		require.NoError(s.T(), err)
 
 		// 驗證設置的值
@@ -124,9 +159,10 @@ func (s *RedisHashTestSuite) TestHashOperations() {
 	key := fmt.Sprintf("product:%d", products[0].ProductID)
 	allFields, err := s.cache.HGetAll(s.ctx, key)
 	require.NoError(s.T(), err)
-	require.Len(s.T(), allFields, 6)
-	require.Equal(s.T(), products[0].Code, allFields["code"])
-	require.Equal(s.T(), products[0].Name, allFields["name"])
+
+	retrievedProduct, err := s.convertFieldsToProduct(allFields)
+	require.NoError(s.T(), err)
+	require.True(s.T(), products[0].Equal(retrievedProduct))
 
 	// 測試 HExists
 	exists, err := s.cache.HExists(s.ctx, key, "code")
@@ -140,19 +176,19 @@ func (s *RedisHashTestSuite) TestHashOperations() {
 	// 測試 HKeys
 	keys, err := s.cache.HKeys(s.ctx, key)
 	require.NoError(s.T(), err)
-	require.Len(s.T(), keys, 6)
+	require.Len(s.T(), keys, 7) // 7 個字段：product_id, code, name, price, stock, reserved, category
 	require.Contains(s.T(), keys, "code")
 	require.Contains(s.T(), keys, "name")
 
 	// 測試 HVals
 	vals, err := s.cache.HVals(s.ctx, key)
 	require.NoError(s.T(), err)
-	require.Len(s.T(), vals, 6)
+	require.Len(s.T(), vals, 7)
 
 	// 測試 HLen
 	length, err := s.cache.HLen(s.ctx, key)
 	require.NoError(s.T(), err)
-	require.Equal(s.T(), int64(6), length)
+	require.Equal(s.T(), int64(7), length)
 
 	// 測試 HIncrBy
 	err = s.cache.HSet(s.ctx, key, "stock", "100")
@@ -176,17 +212,10 @@ func (s *RedisHashTestSuite) TestBulkProductOperations() {
 	products := s.generateRandomProducts(100)
 
 	// 準備批量寫入資料
-	batchItems := make(map[string]map[string]any, len(products))
+	batchItems := make(map[string]any, len(products))
 	for _, product := range products {
 		key := fmt.Sprintf("product:%d", product.ProductID)
-		batchItems[key] = map[string]any{
-			"code":     product.Code,
-			"name":     product.Name,
-			"price":    product.Price.String(),
-			"stock":    fmt.Sprintf("%d", product.Stock),
-			"reserved": fmt.Sprintf("%d", product.Reserved),
-			"category": product.Category,
-		}
+		batchItems[key] = product
 	}
 
 	// 批量寫入所有產品
@@ -207,13 +236,10 @@ func (s *RedisHashTestSuite) TestBulkProductOperations() {
 		key := fmt.Sprintf("product:%d", product.ProductID)
 		fields, ok := batchResult[key]
 		require.True(s.T(), ok, "缺少產品: %s", key)
-		require.Len(s.T(), fields, 6, "產品字段數量不正確")
-		require.Equal(s.T(), product.Code, fields["code"], "產品代碼不匹配")
-		require.Equal(s.T(), product.Name, fields["name"], "產品名稱不匹配")
-		require.Equal(s.T(), product.Price.String(), fields["price"], "產品價格不匹配")
-		require.Equal(s.T(), fmt.Sprintf("%d", product.Stock), fields["stock"], "產品庫存不匹配")
-		require.Equal(s.T(), fmt.Sprintf("%d", product.Reserved), fields["reserved"], "產品預訂數量不匹配")
-		require.Equal(s.T(), product.Category, fields["category"], "產品類別不匹配")
+
+		retrievedProduct, err := s.convertFieldsToProduct(fields)
+		require.NoError(s.T(), err)
+		require.True(s.T(), product.Equal(retrievedProduct), "產品數據不匹配")
 	}
 }
 

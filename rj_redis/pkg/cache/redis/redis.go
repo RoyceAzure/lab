@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -116,7 +117,7 @@ func (r *RedisCache) HSet(ctx context.Context, key string, field string, value a
 	return r.client.HSet(ctx, r.setPrefixKey(key), field, value).Err()
 }
 
-func (r *RedisCache) HGet(ctx context.Context, key string, field string) (any, error) {
+func (r *RedisCache) HGet(ctx context.Context, key string, field string) (string, error) {
 	return r.client.HGet(ctx, r.setPrefixKey(key), field).Result()
 }
 
@@ -144,7 +145,16 @@ func (r *RedisCache) HLen(ctx context.Context, key string) (int64, error) {
 	return r.client.HLen(ctx, r.setPrefixKey(key)).Result()
 }
 
-func (r *RedisCache) HMSet(ctx context.Context, key string, fields map[string]any) error {
+func (r *RedisCache) HMSet(ctx context.Context, key string, value any) error {
+	// 將 value 轉換為 map
+	jsonData, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	var fields map[string]interface{}
+	if err := json.Unmarshal(jsonData, &fields); err != nil {
+		return err
+	}
 	return r.client.HMSet(ctx, r.setPrefixKey(key), fields).Err()
 }
 
@@ -165,18 +175,15 @@ func (r *RedisCache) HMGetAll(ctx context.Context, keys ...string) (map[string]m
 	pipe := r.client.Pipeline()
 	cmds := make(map[string]*redis.MapStringStringCmd, len(keys))
 
-	// 將所有命令加入 pipeline
 	for _, key := range keys {
 		cmds[key] = pipe.HGetAll(ctx, r.setPrefixKey(key))
 	}
 
-	// 執行 pipeline
 	_, err := pipe.Exec(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// 收集結果
 	result := make(map[string]map[string]string, len(keys))
 	for key, cmd := range cmds {
 		fields, err := cmd.Result()
@@ -189,15 +196,22 @@ func (r *RedisCache) HMGetAll(ctx context.Context, keys ...string) (map[string]m
 	return result, nil
 }
 
-func (r *RedisCache) HMSetMulti(ctx context.Context, items map[string]map[string]any) error {
+func (r *RedisCache) HMSetMulti(ctx context.Context, items map[string]any) error {
 	pipe := r.client.Pipeline()
 
-	// 將所有命令加入 pipeline
-	for key, fields := range items {
+	for key, value := range items {
+		// 將 value 轉換為 map
+		jsonData, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		var fields map[string]interface{}
+		if err := json.Unmarshal(jsonData, &fields); err != nil {
+			return err
+		}
 		pipe.HMSet(ctx, r.setPrefixKey(key), fields)
 	}
 
-	// 執行 pipeline
 	_, err := pipe.Exec(ctx)
 	return err
 }

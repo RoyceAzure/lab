@@ -29,19 +29,19 @@ type Cache interface {
 
 	// Hash 相關操作
 	HSet(ctx context.Context, key string, field string, value any) error
-	HGet(ctx context.Context, key string, field string) (any, error)
+	HGet(ctx context.Context, key string, field string) (string, error)
 	HGetAll(ctx context.Context, key string) (map[string]string, error)
 	HDel(ctx context.Context, key string, fields ...string) error
 	HExists(ctx context.Context, key string, field string) (bool, error)
 	HKeys(ctx context.Context, key string) ([]string, error)
 	HVals(ctx context.Context, key string) ([]string, error)
 	HLen(ctx context.Context, key string) (int64, error)
-	HMSet(ctx context.Context, key string, fields map[string]any) error
+	HMSet(ctx context.Context, key string, value any) error
 	HMGet(ctx context.Context, key string, fields ...string) ([]any, error)
 	HIncrBy(ctx context.Context, key string, field string, increment int64) (int64, error)
 	HIncrByFloat(ctx context.Context, key string, field string, increment float64) (float64, error)
 
 	// 批量 Hash 操作
-	HMSetMulti(ctx context.Context, items map[string]map[string]any) error
+	HMSetMulti(ctx context.Context, items map[string]any) error
 	HMGetAll(ctx context.Context, keys ...string) (map[string]map[string]string, error)
 }
