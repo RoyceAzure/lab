@@ -3,6 +3,7 @@ package redis
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -209,11 +210,51 @@ func (r *RedisCache) HMSetMulti(ctx context.Context, items map[string]any) error
 		if err := json.Unmarshal(jsonData, &fields); err != nil {
 			return err
 		}
-		pipe.HMSet(ctx, r.setPrefixKey(key), fields)
+
+		// 處理巢狀結構
+		flattenedFields := make(map[string]interface{})
+		flattenMap("", fields, flattenedFields)
+
+		// 將 interface{} 轉換為 string
+		stringFields := make(map[string]string)
+		for k, v := range flattenedFields {
+			switch val := v.(type) {
+			case string:
+				stringFields[k] = val
+			case []interface{}:
+				// 處理切片，將其轉換為逗號分隔的字符串
+				strSlice := make([]string, len(val))
+				for i, item := range val {
+					strSlice[i] = fmt.Sprint(item)
+				}
+				stringFields[k] = strings.Join(strSlice, ",")
+			default:
+				stringFields[k] = fmt.Sprint(v)
+			}
+		}
+
+		pipe.HMSet(ctx, r.setPrefixKey(key), stringFields)
 	}
 
 	_, err := pipe.Exec(ctx)
 	return err
+}
+
+// flattenMap 將巢狀 map 扁平化
+func flattenMap(prefix string, m map[string]interface{}, result map[string]interface{}) {
+	for k, v := range m {
+		key := k
+		if prefix != "" {
+			key = prefix + "." + k
+		}
+
+		switch val := v.(type) {
+		case map[string]interface{}:
+			flattenMap(key, val, result)
+		default:
+			result[key] = v
+		}
+	}
 }
 
 func (r *RedisCache) HDelMulti(ctx context.Context, items map[string][]string) error {

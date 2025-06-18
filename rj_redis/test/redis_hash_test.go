@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/RoyceAzure/lab/rj_redis/pkg/cache"
@@ -15,6 +16,22 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+// ProductDetail 產品詳細資訊
+type ProductDetail struct {
+	Description string          `json:"description"`
+	Weight      decimal.Decimal `json:"weight"`
+	Dimensions  Dimensions      `json:"dimensions"`
+	Tags        []string        `json:"tags"`
+}
+
+// Dimensions 產品尺寸
+type Dimensions struct {
+	Length decimal.Decimal `json:"length"`
+	Width  decimal.Decimal `json:"width"`
+	Height decimal.Decimal `json:"height"`
+}
+
+// Product 產品結構
 type Product struct {
 	ProductID int             `json:"product_id"`
 	Code      string          `json:"code"`
@@ -23,6 +40,7 @@ type Product struct {
 	Stock     int             `json:"stock"`
 	Reserved  int             `json:"reserved"`
 	Category  string          `json:"category"`
+	Detail    ProductDetail   `json:"detail"`
 }
 
 // Equal 方法用於比較兩個 Product 是否相等
@@ -33,7 +51,26 @@ func (p Product) Equal(other Product) bool {
 		p.Price.Equal(other.Price) &&
 		p.Stock == other.Stock &&
 		p.Reserved == other.Reserved &&
-		p.Category == other.Category
+		p.Category == other.Category &&
+		p.Detail.Description == other.Detail.Description &&
+		p.Detail.Weight.Equal(other.Detail.Weight) &&
+		p.Detail.Dimensions.Length.Equal(other.Detail.Dimensions.Length) &&
+		p.Detail.Dimensions.Width.Equal(other.Detail.Dimensions.Width) &&
+		p.Detail.Dimensions.Height.Equal(other.Detail.Dimensions.Height) &&
+		compareStringSlices(p.Detail.Tags, other.Detail.Tags)
+}
+
+// compareStringSlices 比較兩個字符串切片是否相等
+func compareStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 type RedisHashTestSuite struct {
@@ -63,7 +100,9 @@ func (s *RedisHashTestSuite) SetupTest() {
 
 func (s *RedisHashTestSuite) generateRandomProduct() Product {
 	categories := []string{"Electronics", "Clothing", "Food", "Books", "Sports"}
+	tags := []string{"New", "Popular", "Sale", "Limited", "Premium"}
 	productID := rand.Intn(1000)
+
 	return Product{
 		ProductID: productID,
 		Code:      fmt.Sprintf("P%04d", productID),
@@ -72,20 +111,35 @@ func (s *RedisHashTestSuite) generateRandomProduct() Product {
 		Stock:     rand.Intn(1000),
 		Reserved:  rand.Intn(100),
 		Category:  categories[rand.Intn(len(categories))],
+		Detail: ProductDetail{
+			Description: fmt.Sprintf("Description for product %d", productID),
+			Weight:      decimal.NewFromFloat(rand.Float64() * 10).Round(2),
+			Dimensions: Dimensions{
+				Length: decimal.NewFromFloat(rand.Float64() * 100).Round(2),
+				Width:  decimal.NewFromFloat(rand.Float64() * 100).Round(2),
+				Height: decimal.NewFromFloat(rand.Float64() * 100).Round(2),
+			},
+			Tags: []string{
+				tags[rand.Intn(len(tags))],
+				tags[rand.Intn(len(tags))],
+			},
+		},
 	}
 }
 
 func (s *RedisHashTestSuite) generateRandomProducts(n int) []Product {
 	categories := []string{"Electronics", "Clothing", "Food", "Books", "Sports"}
+	tags := []string{"New", "Popular", "Sale", "Limited", "Premium"}
 	usedIDs := make(map[int]struct{}, n)
 	products := make([]Product, 0, n)
 
 	for len(products) < n {
-		productID := rand.Intn(10000) // 增大範圍以降低碰撞
+		productID := rand.Intn(10000)
 		if _, exists := usedIDs[productID]; exists {
-			continue // 已存在則跳過
+			continue
 		}
 		usedIDs[productID] = struct{}{}
+
 		product := Product{
 			ProductID: productID,
 			Code:      fmt.Sprintf("P%04d", productID),
@@ -94,6 +148,19 @@ func (s *RedisHashTestSuite) generateRandomProducts(n int) []Product {
 			Stock:     rand.Intn(1000),
 			Reserved:  rand.Intn(100),
 			Category:  categories[rand.Intn(len(categories))],
+			Detail: ProductDetail{
+				Description: fmt.Sprintf("Description for product %d", productID),
+				Weight:      decimal.NewFromFloat(rand.Float64() * 10).Round(2),
+				Dimensions: Dimensions{
+					Length: decimal.NewFromFloat(rand.Float64() * 100).Round(2),
+					Width:  decimal.NewFromFloat(rand.Float64() * 100).Round(2),
+					Height: decimal.NewFromFloat(rand.Float64() * 100).Round(2),
+				},
+				Tags: []string{
+					tags[rand.Intn(len(tags))],
+					tags[rand.Intn(len(tags))],
+				},
+			},
 		}
 		products = append(products, product)
 	}
@@ -122,6 +189,29 @@ func (s *RedisHashTestSuite) convertFieldsToProduct(fields map[string]string) (P
 		return Product{}, err
 	}
 
+	weight, err := decimal.NewFromString(fields["detail.weight"])
+	if err != nil {
+		return Product{}, err
+	}
+
+	length, err := decimal.NewFromString(fields["detail.dimensions.length"])
+	if err != nil {
+		return Product{}, err
+	}
+
+	width, err := decimal.NewFromString(fields["detail.dimensions.width"])
+	if err != nil {
+		return Product{}, err
+	}
+
+	height, err := decimal.NewFromString(fields["detail.dimensions.height"])
+	if err != nil {
+		return Product{}, err
+	}
+
+	// 解析標籤
+	tags := strings.Split(fields["detail.tags"], ",")
+
 	return Product{
 		ProductID: productID,
 		Code:      fields["code"],
@@ -130,6 +220,16 @@ func (s *RedisHashTestSuite) convertFieldsToProduct(fields map[string]string) (P
 		Stock:     stock,
 		Reserved:  reserved,
 		Category:  fields["category"],
+		Detail: ProductDetail{
+			Description: fields["detail.description"],
+			Weight:      weight,
+			Dimensions: Dimensions{
+				Length: length,
+				Width:  width,
+				Height: height,
+			},
+			Tags: tags,
+		},
 	}, nil
 }
 
@@ -240,6 +340,124 @@ func (s *RedisHashTestSuite) TestBulkProductOperations() {
 		retrievedProduct, err := s.convertFieldsToProduct(fields)
 		require.NoError(s.T(), err)
 		require.True(s.T(), product.Equal(retrievedProduct), "產品數據不匹配")
+	}
+}
+
+func (s *RedisHashTestSuite) TestHMSetMulti() {
+	// 生成3個隨機商品
+	products := s.generateRandomProducts(3)
+
+	// 準備批量寫入資料
+	batchItems := make(map[string]any, len(products))
+	for _, product := range products {
+		key := fmt.Sprintf("product:%d", product.ProductID)
+		batchItems[key] = product
+	}
+
+	// 批量寫入所有產品
+	err := s.cache.HMSetMulti(s.ctx, batchItems)
+	require.NoError(s.T(), err)
+
+	// 驗證每個產品的數據
+	for _, product := range products {
+		key := fmt.Sprintf("product:%d", product.ProductID)
+
+		// 讀取產品數據
+		fields, err := s.cache.HGetAll(s.ctx, key)
+		require.NoError(s.T(), err)
+		require.NotEmpty(s.T(), fields, "產品數據不應為空")
+
+		// 轉換並比較數據
+		retrievedProduct, err := s.convertFieldsToProduct(fields)
+		require.NoError(s.T(), err)
+		require.True(s.T(), product.Equal(retrievedProduct), "產品數據不匹配")
+
+		// 驗證特定字段
+		require.Equal(s.T(), product.Code, fields["code"])
+		require.Equal(s.T(), product.Name, fields["name"])
+		require.Equal(s.T(), product.Price.String(), fields["price"])
+		require.Equal(s.T(), fmt.Sprintf("%d", product.Stock), fields["stock"])
+		require.Equal(s.T(), fmt.Sprintf("%d", product.Reserved), fields["reserved"])
+		require.Equal(s.T(), product.Category, fields["category"])
+
+		// 驗證巢狀結構
+		require.Equal(s.T(), product.Detail.Description, fields["detail.description"])
+		require.Equal(s.T(), product.Detail.Weight.String(), fields["detail.weight"])
+		require.Equal(s.T(), product.Detail.Dimensions.Length.String(), fields["detail.dimensions.length"])
+		require.Equal(s.T(), product.Detail.Dimensions.Width.String(), fields["detail.dimensions.width"])
+		require.Equal(s.T(), product.Detail.Dimensions.Height.String(), fields["detail.dimensions.height"])
+		require.Equal(s.T(), strings.Join(product.Detail.Tags, ","), fields["detail.tags"])
+	}
+}
+
+func (s *RedisHashTestSuite) TestHMSetMultiWithModification() {
+	// 生成3個隨機商品
+	products := s.generateRandomProducts(3)
+
+	// 準備批量寫入資料
+	batchItems := make(map[string]any, len(products))
+	for _, product := range products {
+		key := fmt.Sprintf("product:%d", product.ProductID)
+		batchItems[key] = product
+	}
+
+	// 第一次批量寫入
+	err := s.cache.HMSetMulti(s.ctx, batchItems)
+	require.NoError(s.T(), err)
+
+	// 修改產品數據
+	for i := range products {
+		// 修改基本字段
+		products[i].Name = fmt.Sprintf("Modified Product %d", products[i].ProductID)
+		products[i].Price = decimal.NewFromFloat(rand.Float64() * 2000).Round(2)
+		products[i].Stock = rand.Intn(2000)
+
+		// 修改巢狀結構
+		products[i].Detail.Description = fmt.Sprintf("Modified Description for product %d", products[i].ProductID)
+		products[i].Detail.Weight = decimal.NewFromFloat(rand.Float64() * 20).Round(2)
+		products[i].Detail.Dimensions.Length = decimal.NewFromFloat(rand.Float64() * 200).Round(2)
+		products[i].Detail.Dimensions.Width = decimal.NewFromFloat(rand.Float64() * 200).Round(2)
+		products[i].Detail.Dimensions.Height = decimal.NewFromFloat(rand.Float64() * 200).Round(2)
+		products[i].Detail.Tags = []string{"Modified", "Updated"}
+	}
+
+	// 更新批量寫入資料
+	batchItems = make(map[string]any, len(products))
+	for _, product := range products {
+		key := fmt.Sprintf("product:%d", product.ProductID)
+		batchItems[key] = product
+	}
+
+	// 第二次批量寫入（更新）
+	err = s.cache.HMSetMulti(s.ctx, batchItems)
+	require.NoError(s.T(), err)
+
+	// 驗證修改後的數據
+	for _, product := range products {
+		key := fmt.Sprintf("product:%d", product.ProductID)
+
+		// 讀取產品數據
+		fields, err := s.cache.HGetAll(s.ctx, key)
+		require.NoError(s.T(), err)
+		require.NotEmpty(s.T(), fields, "產品數據不應為空")
+
+		// 轉換並比較數據
+		retrievedProduct, err := s.convertFieldsToProduct(fields)
+		require.NoError(s.T(), err)
+		require.True(s.T(), product.Equal(retrievedProduct), "修改後的產品數據不匹配")
+
+		// 驗證修改後的特定字段
+		require.Equal(s.T(), product.Name, fields["name"], "產品名稱不匹配")
+		require.Equal(s.T(), product.Price.String(), fields["price"], "產品價格不匹配")
+		require.Equal(s.T(), fmt.Sprintf("%d", product.Stock), fields["stock"], "產品庫存不匹配")
+
+		// 驗證修改後的巢狀結構
+		require.Equal(s.T(), product.Detail.Description, fields["detail.description"], "產品描述不匹配")
+		require.Equal(s.T(), product.Detail.Weight.String(), fields["detail.weight"], "產品重量不匹配")
+		require.Equal(s.T(), product.Detail.Dimensions.Length.String(), fields["detail.dimensions.length"], "產品長度不匹配")
+		require.Equal(s.T(), product.Detail.Dimensions.Width.String(), fields["detail.dimensions.width"], "產品寬度不匹配")
+		require.Equal(s.T(), product.Detail.Dimensions.Height.String(), fields["detail.dimensions.height"], "產品高度不匹配")
+		require.Equal(s.T(), strings.Join(product.Detail.Tags, ","), fields["detail.tags"], "產品標籤不匹配")
 	}
 }
 
