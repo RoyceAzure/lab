@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
-	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/RoyceAzure/lab/rj_redis/pkg/cache"
 	redis_cache "github.com/RoyceAzure/lab/rj_redis/pkg/cache/redis"
@@ -71,6 +71,30 @@ func compareStringSlices(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// BaseModel 基礎模型
+type BaseModel struct {
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// OrderItem 訂單項目
+type OrderItem struct {
+	OrderID   uint `json:"order_id"`
+	ProductID uint `json:"product_id"`
+	Quantity  int  `json:"quantity"`
+	BaseModel
+}
+
+// Order 訂單結構
+type Order struct {
+	OrderID    uint            `json:"order_id"`
+	UserID     uint            `json:"user_id"`
+	OrderItems []OrderItem     `json:"order_items"`
+	Amount     decimal.Decimal `json:"amount"`
+	OrderDate  time.Time       `json:"order_date"`
+	BaseModel
 }
 
 type RedisHashTestSuite struct {
@@ -167,61 +191,91 @@ func (s *RedisHashTestSuite) generateRandomProducts(n int) []Product {
 	return products
 }
 
-// convertFieldsToProduct 將 map[string]string 轉換為 Product
-func (s *RedisHashTestSuite) convertFieldsToProduct(fields map[string]string) (Product, error) {
-	productID, err := strconv.Atoi(fields["product_id"])
+// convertFieldsToProduct 將 map[string]any 轉換為 Product
+func (s *RedisHashTestSuite) convertFieldsToProduct(fields map[string]any) (Product, error) {
+	// 轉換 product_id
+	productID, ok := fields["product_id"].(float64)
+	if !ok {
+		return Product{}, fmt.Errorf("invalid product_id type")
+	}
+
+	// 轉換 stock
+	stock, ok := fields["stock"].(float64)
+	if !ok {
+		return Product{}, fmt.Errorf("invalid stock type")
+	}
+
+	// 轉換 reserved
+	reserved, ok := fields["reserved"].(float64)
+	if !ok {
+		return Product{}, fmt.Errorf("invalid reserved type")
+	}
+
+	// 轉換 price
+	priceStr, ok := fields["price"].(string)
+	if !ok {
+		return Product{}, fmt.Errorf("invalid price type")
+	}
+	price, err := decimal.NewFromString(priceStr)
 	if err != nil {
 		return Product{}, err
 	}
 
-	stock, err := strconv.Atoi(fields["stock"])
+	// 轉換 detail.weight
+	weightStr, ok := fields["detail.weight"].(string)
+	if !ok {
+		return Product{}, fmt.Errorf("invalid detail.weight type")
+	}
+	weight, err := decimal.NewFromString(weightStr)
 	if err != nil {
 		return Product{}, err
 	}
 
-	reserved, err := strconv.Atoi(fields["reserved"])
+	// 轉換 detail.dimensions
+	lengthStr, ok := fields["detail.dimensions.length"].(string)
+	if !ok {
+		return Product{}, fmt.Errorf("invalid detail.dimensions.length type")
+	}
+	length, err := decimal.NewFromString(lengthStr)
 	if err != nil {
 		return Product{}, err
 	}
 
-	price, err := decimal.NewFromString(fields["price"])
+	widthStr, ok := fields["detail.dimensions.width"].(string)
+	if !ok {
+		return Product{}, fmt.Errorf("invalid detail.dimensions.width type")
+	}
+	width, err := decimal.NewFromString(widthStr)
 	if err != nil {
 		return Product{}, err
 	}
 
-	weight, err := decimal.NewFromString(fields["detail.weight"])
+	heightStr, ok := fields["detail.dimensions.height"].(string)
+	if !ok {
+		return Product{}, fmt.Errorf("invalid detail.dimensions.height type")
+	}
+	height, err := decimal.NewFromString(heightStr)
 	if err != nil {
 		return Product{}, err
 	}
 
-	length, err := decimal.NewFromString(fields["detail.dimensions.length"])
-	if err != nil {
-		return Product{}, err
+	// 轉換 detail.tags
+	tagsStr, ok := fields["detail.tags"].(string)
+	if !ok {
+		return Product{}, fmt.Errorf("invalid detail.tags type")
 	}
-
-	width, err := decimal.NewFromString(fields["detail.dimensions.width"])
-	if err != nil {
-		return Product{}, err
-	}
-
-	height, err := decimal.NewFromString(fields["detail.dimensions.height"])
-	if err != nil {
-		return Product{}, err
-	}
-
-	// 解析標籤
-	tags := strings.Split(fields["detail.tags"], ",")
+	tags := strings.Split(tagsStr, ",")
 
 	return Product{
-		ProductID: productID,
-		Code:      fields["code"],
-		Name:      fields["name"],
+		ProductID: int(productID),
+		Code:      fields["code"].(string),
+		Name:      fields["name"].(string),
 		Price:     price,
-		Stock:     stock,
-		Reserved:  reserved,
-		Category:  fields["category"],
+		Stock:     int(stock),
+		Reserved:  int(reserved),
+		Category:  fields["category"].(string),
 		Detail: ProductDetail{
-			Description: fields["detail.description"],
+			Description: fields["detail.description"].(string),
 			Weight:      weight,
 			Dimensions: Dimensions{
 				Length: length,
@@ -344,49 +398,34 @@ func (s *RedisHashTestSuite) TestBulkProductOperations() {
 }
 
 func (s *RedisHashTestSuite) TestHMSetMulti() {
-	// 生成3個隨機商品
-	products := s.generateRandomProducts(3)
+	// 生成100個隨機商品
+	products := s.generateRandomProducts(100)
 
-	// 準備批量寫入資料
-	batchItems := make(map[string]any, len(products))
+	// 準備批量設置的數據
+	items := make(map[string]any)
 	for _, product := range products {
 		key := fmt.Sprintf("product:%d", product.ProductID)
-		batchItems[key] = product
+		items[key] = product
 	}
 
-	// 批量寫入所有產品
-	err := s.cache.HMSetMulti(s.ctx, batchItems)
+	// 批量設置
+	err := s.cache.HMSetMulti(s.ctx, items)
 	require.NoError(s.T(), err)
 
-	// 驗證每個產品的數據
+	// 驗證設置的值
 	for _, product := range products {
 		key := fmt.Sprintf("product:%d", product.ProductID)
 
-		// 讀取產品數據
-		fields, err := s.cache.HGetAll(s.ctx, key)
+		// 獲取所有字段
+		allFields, err := s.cache.HGetAll(s.ctx, key)
 		require.NoError(s.T(), err)
-		require.NotEmpty(s.T(), fields, "產品數據不應為空")
 
-		// 轉換並比較數據
-		retrievedProduct, err := s.convertFieldsToProduct(fields)
+		// 轉換回 Product 結構
+		retrievedProduct, err := s.convertFieldsToProduct(allFields)
 		require.NoError(s.T(), err)
-		require.True(s.T(), product.Equal(retrievedProduct), "產品數據不匹配")
 
-		// 驗證特定字段
-		require.Equal(s.T(), product.Code, fields["code"])
-		require.Equal(s.T(), product.Name, fields["name"])
-		require.Equal(s.T(), product.Price.String(), fields["price"])
-		require.Equal(s.T(), fmt.Sprintf("%d", product.Stock), fields["stock"])
-		require.Equal(s.T(), fmt.Sprintf("%d", product.Reserved), fields["reserved"])
-		require.Equal(s.T(), product.Category, fields["category"])
-
-		// 驗證巢狀結構
-		require.Equal(s.T(), product.Detail.Description, fields["detail.description"])
-		require.Equal(s.T(), product.Detail.Weight.String(), fields["detail.weight"])
-		require.Equal(s.T(), product.Detail.Dimensions.Length.String(), fields["detail.dimensions.length"])
-		require.Equal(s.T(), product.Detail.Dimensions.Width.String(), fields["detail.dimensions.width"])
-		require.Equal(s.T(), product.Detail.Dimensions.Height.String(), fields["detail.dimensions.height"])
-		require.Equal(s.T(), strings.Join(product.Detail.Tags, ","), fields["detail.tags"])
+		// 驗證數據
+		require.True(s.T(), product.Equal(retrievedProduct))
 	}
 }
 
@@ -458,6 +497,98 @@ func (s *RedisHashTestSuite) TestHMSetMultiWithModification() {
 		require.Equal(s.T(), product.Detail.Dimensions.Width.String(), fields["detail.dimensions.width"], "產品寬度不匹配")
 		require.Equal(s.T(), product.Detail.Dimensions.Height.String(), fields["detail.dimensions.height"], "產品高度不匹配")
 		require.Equal(s.T(), strings.Join(product.Detail.Tags, ","), fields["detail.tags"], "產品標籤不匹配")
+	}
+}
+
+func (s *RedisHashTestSuite) TestHMSetMultiWithArray() {
+	// 創建一個訂單
+	order := Order{
+		OrderID:   1001,
+		UserID:    2001,
+		Amount:    decimal.NewFromFloat(491.75),
+		OrderDate: time.Now(),
+		BaseModel: BaseModel{CreatedAt: time.Now(), UpdatedAt: time.Now()},
+		OrderItems: []OrderItem{
+			{
+				OrderID:   1001,
+				ProductID: 101,
+				Quantity:  2,
+				BaseModel: BaseModel{CreatedAt: time.Now(), UpdatedAt: time.Now()},
+			},
+			{
+				OrderID:   1001,
+				ProductID: 102,
+				Quantity:  1,
+				BaseModel: BaseModel{CreatedAt: time.Now(), UpdatedAt: time.Now()},
+			},
+		},
+	}
+
+	// 準備批量寫入資料
+	batchItems := make(map[string]any)
+	batchItems["order:1001"] = order
+
+	// 批量寫入
+	err := s.cache.HMSetMulti(s.ctx, batchItems)
+	require.NoError(s.T(), err)
+
+	// 讀取數據
+	fields, err := s.cache.HGetAll(s.ctx, "order:1001")
+	require.NoError(s.T(), err)
+	require.NotEmpty(s.T(), fields)
+
+	// 打印平坦化後的字段
+	fmt.Println("平坦化後的字段：")
+	for k, v := range fields {
+		fmt.Printf("%s: %s\n", k, v)
+	}
+
+	// 驗證基本字段
+	require.Equal(s.T(), "1001", fields["order_id"])
+	require.Equal(s.T(), "2001", fields["user_id"])
+	require.Equal(s.T(), "491.75", fields["amount"])
+
+	// 驗證數組字段
+	// 注意：數組會被轉換為逗號分隔的字符串
+	require.Contains(s.T(), fields, "order_items")
+	itemsStr := fields["order_items"]
+	fmt.Printf("order_items 字段的值：%s\n", itemsStr)
+}
+
+func (s *RedisHashTestSuite) TestHMGetAll() {
+	// 生成100個隨機商品
+	products := s.generateRandomProducts(100)
+
+	// 準備批量設置的數據
+	items := make(map[string]any)
+	keys := make([]string, 0, len(products))
+	for _, product := range products {
+		key := fmt.Sprintf("product:%d", product.ProductID)
+		items[key] = product
+		keys = append(keys, key)
+	}
+
+	// 批量設置
+	err := s.cache.HMSetMulti(s.ctx, items)
+	require.NoError(s.T(), err)
+
+	// 批量獲取所有商品
+	allProducts, err := s.cache.HMGetAll(s.ctx, keys...)
+	require.NoError(s.T(), err)
+	require.Len(s.T(), allProducts, len(products))
+
+	// 驗證每個商品的數據
+	for _, product := range products {
+		key := fmt.Sprintf("product:%d", product.ProductID)
+		fields, exists := allProducts[key]
+		require.True(s.T(), exists, "商品數據應該存在")
+
+		// 轉換回 Product 結構
+		retrievedProduct, err := s.convertFieldsToProduct(fields)
+		require.NoError(s.T(), err)
+
+		// 驗證數據
+		require.True(s.T(), product.Equal(retrievedProduct))
 	}
 }
 

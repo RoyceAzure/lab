@@ -5,6 +5,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// 特定repo需要加上resdis操做
 type DbDao struct {
 	*gorm.DB
 }

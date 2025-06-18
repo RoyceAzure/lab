@@ -1,11 +1,15 @@
 package db
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/RoyceAzure/lab/cqrs/config"
 	"github.com/RoyceAzure/lab/cqrs/infra/repository/db/model"
+	redis_cache "github.com/RoyceAzure/lab/rj_redis/pkg/cache/redis"
+	"github.com/RoyceAzure/lab/rj_redis/pkg/redis_client"
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -19,13 +23,23 @@ type OrderRepoTestSuite struct {
 	userRepo  *UserRepo
 }
 
+const (
+	testRedisAddr     = "localhost:6379"
+	testRedisPassword = "password"
+	testPrefix        = "test_prefix"
+)
+
 // SetupSuite 在測試套件開始前執行
 func (suite *OrderRepoTestSuite) SetupSuite() {
 	db, err := GetDbConn("lab_cqrs", "localhost", "5432", "royce", "password")
 	require.NoError(suite.T(), err)
 	dbDao := NewDbDao(db)
 
-	orderRepo := NewOrderRepo(dbDao)
+	redisClient, err := redis_client.GetRedisClient(testRedisAddr, redis_client.WithPassword(testRedisPassword))
+	require.NoError(suite.T(), err)
+	redisCache := redis_cache.NewRedisCache(redisClient, testPrefix)
+
+	orderRepo := NewOrderRepo(dbDao, redisCache)
 	userRepo := NewUserRepo(dbDao)
 	suite.db = db
 	suite.orderRepo = orderRepo
@@ -286,6 +300,161 @@ func (suite *OrderRepoTestSuite) TestGetUserOrderStats() {
 	require.Equal(suite.T(), 2, orderCount)
 }
 
+func (suite *OrderRepoTestSuite) TestCreateCacheCart() {
+	user := suite.createTestUser()
+	cart := model.Cart{
+		UserID: user.UserID,
+		OrderItems: []model.CartItem{
+			{
+				ProductID: 1,
+				Quantity:  2,
+			},
+		},
+		Amount: decimal.NewFromFloat(200.0),
+	}
+
+	cartID, err := suite.orderRepo.CreateCacheCart(context.Background(), user.UserID, cart)
+
+	require.NoError(suite.T(), err)
+	require.NotEqual(suite.T(), uuid.Nil, cartID)
+}
+
+func (suite *OrderRepoTestSuite) TestGetCacheCart() {
+	user := suite.createTestUser()
+	originalCart := model.Cart{
+		UserID: user.UserID,
+		OrderItems: []model.CartItem{
+			{
+				ProductID: 1,
+				Quantity:  2,
+			},
+			{
+				ProductID: 2,
+				Quantity:  3,
+			},
+			{
+				ProductID: 3,
+				Quantity:  4,
+			},
+		},
+		Amount: decimal.NewFromFloat(200.0),
+	}
+
+	// 先創建購物車
+	cartID, err := suite.orderRepo.CreateCacheCart(context.Background(), user.UserID, originalCart)
+	require.NoError(suite.T(), err)
+
+	// 獲取購物車
+	retrievedCart, err := suite.orderRepo.GetCacheCart(context.Background(), user.UserID)
+
+	require.NoError(suite.T(), err)
+	require.NotNil(suite.T(), retrievedCart)
+	require.Equal(suite.T(), cartID, retrievedCart.CartID)
+	require.Equal(suite.T(), user.UserID, retrievedCart.UserID)
+	require.Len(suite.T(), retrievedCart.OrderItems, 3)
+	require.Equal(suite.T(), uint(1), retrievedCart.OrderItems[0].ProductID)
+	require.Equal(suite.T(), 2, retrievedCart.OrderItems[0].Quantity)
+	require.Equal(suite.T(), uint(2), retrievedCart.OrderItems[1].ProductID)
+	require.Equal(suite.T(), 3, retrievedCart.OrderItems[1].Quantity)
+	require.Equal(suite.T(), uint(3), retrievedCart.OrderItems[2].ProductID)
+	require.Equal(suite.T(), 4, retrievedCart.OrderItems[2].Quantity)
+	require.True(suite.T(), decimal.NewFromFloat(200.0).Equal(retrievedCart.Amount))
+}
+
+func (suite *OrderRepoTestSuite) TestGetCacheCart_NotFound() {
+	user := suite.createTestUser()
+
+	// 嘗試獲取不存在的購物車
+	cart, err := suite.orderRepo.GetCacheCart(context.Background(), user.UserID)
+
+	require.Error(suite.T(), err)
+	require.Nil(suite.T(), cart)
+}
+
+func (suite *OrderRepoTestSuite) TestUpdateCacheCart() {
+	user := suite.createTestUser()
+
+	// 先創建一個購物車
+	originalCart := model.Cart{
+		UserID: user.UserID,
+		OrderItems: []model.CartItem{
+			{
+				ProductID: 1,
+				Quantity:  2,
+			},
+		},
+		Amount: decimal.NewFromFloat(200.0),
+	}
+
+	cartID, err := suite.orderRepo.CreateCacheCart(context.Background(), user.UserID, originalCart)
+	require.NoError(suite.T(), err)
+
+	// 修改購物車內容
+	updatedCart := model.Cart{
+		CartID: cartID,
+		UserID: user.UserID,
+		OrderItems: []model.CartItem{
+			{
+				ProductID: 1,
+				Quantity:  5, // 修改數量
+			},
+			{
+				ProductID: 2,
+				Quantity:  3, // 新增商品
+			},
+		},
+		Amount: decimal.NewFromFloat(500.0), // 修改總金額
+	}
+
+	// 更新購物車
+	resultCart, err := suite.orderRepo.UpdateCacheCart(context.Background(), user.UserID, updatedCart)
+	require.NoError(suite.T(), err)
+	require.NotNil(suite.T(), resultCart)
+
+	// 驗證更新後的購物車
+	require.Equal(suite.T(), cartID, resultCart.CartID)
+	require.Equal(suite.T(), user.UserID, resultCart.UserID)
+	require.Len(suite.T(), resultCart.OrderItems, 2)
+	require.Equal(suite.T(), uint(1), resultCart.OrderItems[0].ProductID)
+	require.Equal(suite.T(), 5, resultCart.OrderItems[0].Quantity)
+	require.Equal(suite.T(), uint(2), resultCart.OrderItems[1].ProductID)
+	require.Equal(suite.T(), 3, resultCart.OrderItems[1].Quantity)
+	require.True(suite.T(), decimal.NewFromFloat(500.0).Equal(resultCart.Amount))
+
+	// 從快取中讀取並驗證
+	retrievedCart, err := suite.orderRepo.GetCacheCart(context.Background(), user.UserID)
+	require.NoError(suite.T(), err)
+	require.NotNil(suite.T(), retrievedCart)
+	require.Equal(suite.T(), cartID, retrievedCart.CartID)
+	require.Equal(suite.T(), user.UserID, retrievedCart.UserID)
+	require.Len(suite.T(), retrievedCart.OrderItems, 2)
+	require.Equal(suite.T(), uint(1), retrievedCart.OrderItems[0].ProductID)
+	require.Equal(suite.T(), 5, retrievedCart.OrderItems[0].Quantity)
+	require.Equal(suite.T(), uint(2), retrievedCart.OrderItems[1].ProductID)
+	require.Equal(suite.T(), 3, retrievedCart.OrderItems[1].Quantity)
+	require.True(suite.T(), decimal.NewFromFloat(500.0).Equal(retrievedCart.Amount))
+}
+
+func (suite *OrderRepoTestSuite) TestUpdateCacheCart_NotFound() {
+	user := suite.createTestUser()
+
+	// 嘗試更新不存在的購物車
+	updatedCart := model.Cart{
+		UserID: user.UserID,
+		OrderItems: []model.CartItem{
+			{
+				ProductID: 1,
+				Quantity:  5,
+			},
+		},
+		Amount: decimal.NewFromFloat(500.0),
+	}
+
+	resultCart, err := suite.orderRepo.UpdateCacheCart(context.Background(), user.UserID, updatedCart)
+	require.Error(suite.T(), err)
+	require.Nil(suite.T(), resultCart)
+}
+
 // 執行測試套件
 func TestOrderServiceTestSuite(t *testing.T) {
 	suite.Run(t, new(OrderRepoTestSuite))
@@ -302,7 +471,7 @@ func TestNewOrderRepo(t *testing.T) {
 	require.NoError(t, err)
 
 	dbDao := NewDbDao(db)
-	repo := NewOrderRepo(dbDao)
+	repo := NewOrderRepo(dbDao, nil)
 
 	require.NotNil(t, repo)
 	require.Equal(t, dbDao, repo.db)
@@ -319,7 +488,7 @@ func BenchmarkCreateOrder(b *testing.B) {
 	require.NoError(b, err)
 
 	dbDao := NewDbDao(db)
-	repo := NewOrderRepo(dbDao)
+	repo := NewOrderRepo(dbDao, nil)
 	userRepo := NewUserRepo(dbDao)
 
 	// 創建測試用戶

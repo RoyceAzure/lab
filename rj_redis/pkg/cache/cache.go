@@ -30,18 +30,27 @@ type Cache interface {
 	// Hash 相關操作
 	HSet(ctx context.Context, key string, field string, value any) error
 	HGet(ctx context.Context, key string, field string) (string, error)
-	HGetAll(ctx context.Context, key string) (map[string]string, error)
+	HMSet(ctx context.Context, key string, value any) error
+	HMGet(ctx context.Context, key string, fields ...string) ([]any, error)
+	HIncrBy(ctx context.Context, key string, field string, increment int64) (int64, error)
+	HIncrByFloat(ctx context.Context, key string, field string, increment float64) (float64, error)
 	HDel(ctx context.Context, key string, fields ...string) error
 	HExists(ctx context.Context, key string, field string) (bool, error)
 	HKeys(ctx context.Context, key string) ([]string, error)
 	HVals(ctx context.Context, key string) ([]string, error)
 	HLen(ctx context.Context, key string) (int64, error)
-	HMSet(ctx context.Context, key string, value any) error
-	HMGet(ctx context.Context, key string, fields ...string) ([]any, error)
-	HIncrBy(ctx context.Context, key string, field string, increment int64) (int64, error)
-	HIncrByFloat(ctx context.Context, key string, field string, increment float64) (float64, error)
 
 	// 批量 Hash 操作
 	HMSetMulti(ctx context.Context, items map[string]any) error
-	HMGetAll(ctx context.Context, keys ...string) (map[string]map[string]string, error)
+	HMGetAll(ctx context.Context, keys ...string) (map[string]map[string]any, error)
+
+	// Set 操作
+	SAdd(ctx context.Context, key string, members ...any) error
+	SMembers(ctx context.Context, key string) ([]string, error)
+	SRem(ctx context.Context, key string, members ...any) error
+	SCard(ctx context.Context, key string) (int64, error)
+	SIsMember(ctx context.Context, key string, member any) (bool, error)
+
+	// Hash 操作
+	HGetAll(ctx context.Context, key string) (map[string]any, error)
 }

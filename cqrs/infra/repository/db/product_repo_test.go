@@ -23,7 +23,7 @@ func (suite *ProductRepoTestSuite) SetupSuite() {
 	require.NoError(suite.T(), err)
 
 	dbDao := NewDbDao(db)
-	productRepo := NewProductRepo(dbDao)
+	productRepo := NewProductRepo(dbDao, nil)
 	suite.db = db
 	suite.productRepo = productRepo
 }
@@ -277,7 +277,7 @@ func TestNewProductRepo(t *testing.T) {
 	require.NoError(t, err)
 
 	dbDao := NewDbDao(db)
-	repo := NewProductRepo(dbDao)
+	repo := NewProductRepo(dbDao, nil)
 
 	require.NotNil(t, repo)
 	require.Equal(t, dbDao, repo.db)
@@ -289,7 +289,7 @@ func BenchmarkCreateProduct(b *testing.B) {
 	require.NoError(b, err)
 
 	dbDao := NewDbDao(db)
-	repo := NewProductRepo(dbDao)
+	repo := NewProductRepo(dbDao, nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

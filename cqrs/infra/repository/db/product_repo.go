@@ -1,16 +1,24 @@
 package db
 
 import (
+	"context"
+	"fmt"
+	"strconv"
+	"time"
+
 	"github.com/RoyceAzure/lab/cqrs/infra/repository/db/model"
+	redis_cache "github.com/RoyceAzure/lab/rj_redis/pkg/cache/redis"
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
 type ProductRepo struct {
-	db *DbDao
+	ProductCache *redis_cache.RedisCache
+	db           *DbDao
 }
 
-func NewProductRepo(db *DbDao) *ProductRepo {
-	return &ProductRepo{db: db}
+func NewProductRepo(db *DbDao, redisCache *redis_cache.RedisCache) *ProductRepo {
+	return &ProductRepo{db: db, ProductCache: redisCache}
 }
 
 // Create - 創建商品
@@ -20,12 +28,69 @@ func (s *ProductRepo) CreateProduct(product *model.Product) error {
 
 // Read - 根據ID查詢商品
 func (s *ProductRepo) GetProductByID(id uint) (*model.Product, error) {
-	var product model.Product
-	err := s.db.First(&product, id).Error
+	redisKey := fmt.Sprintf("%d", id)
+	product, err := s.ProductCache.HGetAll(context.Background(), redisKey)
 	if err != nil {
 		return nil, err
 	}
-	return &product, nil
+
+	if len(product) > 0 {
+		productModel, err := convertRedisMapToProduct(id, product)
+		if err != nil {
+			return nil, err
+		}
+		return productModel, nil
+	}
+
+	var productFromDB model.Product
+	err = s.db.First(&productFromDB, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &productFromDB, nil
+}
+
+// convertRedisMapToProduct 將 Redis 的 map[string]string 轉換為 model.Product
+func convertRedisMapToProduct(id uint, productMap map[string]any) (*model.Product, error) {
+	price, err := decimal.NewFromString(productMap["price"].(string))
+	if err != nil {
+		return nil, fmt.Errorf("invalid price format: %v", err)
+	}
+
+	stock, err := strconv.ParseUint(productMap["stock"].(string), 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid stock format: %v", err)
+	}
+
+	reserved, err := strconv.ParseUint(productMap["reserved"].(string), 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid reserved format: %v", err)
+	}
+
+	createdAt, err := time.Parse(time.RFC3339, productMap["created_at"].(string))
+	if err != nil {
+		return nil, fmt.Errorf("invalid created_at format: %v", err)
+	}
+
+	updatedAt, err := time.Parse(time.RFC3339, productMap["updated_at"].(string))
+	if err != nil {
+		return nil, fmt.Errorf("invalid updated_at format: %v", err)
+	}
+
+	return &model.Product{
+		ProductID:   id,
+		Code:        productMap["code"].(string),
+		Name:        productMap["name"].(string),
+		Price:       price,
+		Stock:       uint(stock),
+		Reserved:    uint(reserved),
+		Category:    productMap["category"].(string),
+		Description: productMap["description"].(string),
+		BaseModel: model.BaseModel{
+			CreatedAt: createdAt,
+			UpdatedAt: updatedAt,
+		},
+	}, nil
 }
 
 // Read - 根據商品代碼查詢
@@ -38,10 +103,53 @@ func (s *ProductRepo) GetProductByCode(code string) (*model.Product, error) {
 	return &product, nil
 }
 
+func convertProductFromRedis(key string, product map[string]any) (*model.Product, error) {
+	productID, err := strconv.ParseUint(key, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	price, err := decimal.NewFromString(product["price"].(string))
+	if err != nil {
+		return nil, err
+	}
+	stock, err := strconv.ParseUint(product["stock"].(string), 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	return &model.Product{
+		ProductID:   uint(productID),
+		Code:        product["code"].(string),
+		Name:        product["name"].(string),
+		Price:       price,
+		Stock:       uint(stock),
+		Category:    product["category"].(string),
+		Description: product["description"].(string),
+	}, nil
+}
+
 // Read - 查詢所有商品
 func (s *ProductRepo) GetAllProducts() ([]model.Product, error) {
 	var products []model.Product
-	err := s.db.Find(&products).Error
+	productsMap, err := s.ProductCache.HMGetAll(context.Background(), "*")
+	if err != nil {
+		return nil, err
+	}
+
+	for key, product := range productsMap {
+		product, err := convertProductFromRedis(key, product)
+		if err != nil {
+			return nil, err
+		}
+		products = append(products, *product)
+	}
+
+	if len(products) == 0 {
+		err := s.db.Find(&products).Error
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return products, err
 }
 

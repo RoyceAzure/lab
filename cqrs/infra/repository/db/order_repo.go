@@ -1,18 +1,27 @@
 package db
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
 	"github.com/RoyceAzure/lab/cqrs/infra/repository/db/model"
+	redis_cache "github.com/RoyceAzure/lab/rj_redis/pkg/cache"
+	"github.com/google/uuid"
 )
 
+// 購物車階段 只會寫入到redis, 不會寫入到db，所有購物車資料都要去redis取
 type OrderRepo struct {
-	db *DbDao
+	CartCache redis_cache.Cache
+	db        *DbDao
 }
 
-func NewOrderRepo(db *DbDao) *OrderRepo {
-	return &OrderRepo{db: db}
+func NewOrderRepo(db *DbDao, redisCache redis_cache.Cache) *OrderRepo {
+	return &OrderRepo{db: db, CartCache: redisCache}
 }
 
-// Create - 創建訂單
+// Create - 創建訂單 db
 func (s *OrderRepo) CreateOrder(order *model.Order) error {
 	return s.db.Create(order).Error
 }
@@ -176,4 +185,62 @@ func (s *OrderRepo) UpdateOrderItemQuantity(orderID, productID uint, quantity in
 func (s *OrderRepo) DeleteOrderItem(orderID, productID uint) error {
 	return s.db.Where("order_id = ? AND product_id = ?", orderID, productID).
 		Delete(&model.OrderItem{}).Error
+}
+
+// 創建購物車
+func (s *OrderRepo) CreateCacheCart(ctx context.Context, userID uint, cart model.Cart) (uuid.UUID, error) {
+	//購物車主資料
+	cartId := uuid.New()
+	cart.CartID = cartId
+	cartJSON, err := json.Marshal(cart)
+	if err != nil {
+		return uuid.UUID{}, fmt.Errorf("序列化購物車失敗: %v", err)
+	}
+
+	key := fmt.Sprintf("cart:%d", userID)
+	err = s.CartCache.Set(ctx, key, cartJSON, 24*time.Hour)
+	if err != nil {
+		return uuid.UUID{}, fmt.Errorf("保存購物車失敗: %v", err)
+	}
+	return cartId, nil
+}
+
+// 取得購物車
+func (s *OrderRepo) GetCacheCart(ctx context.Context, userID uint) (*model.Cart, error) {
+	key := fmt.Sprintf("cart:%d", userID)
+	cartJSON, err := s.CartCache.Get(ctx, key)
+	if err != nil {
+		return nil, fmt.Errorf("獲取購物車失敗: %v", err)
+	}
+	var cart model.Cart
+	cartJSONStr, ok := cartJSON.(string)
+	if !ok {
+		return nil, fmt.Errorf("購物車資料格式錯誤")
+	}
+	err = json.Unmarshal([]byte(cartJSONStr), &cart)
+	if err != nil {
+		return nil, fmt.Errorf("反序列化購物車失敗: %v", err)
+	}
+
+	return &cart, nil
+}
+
+// 修改購物車
+func (s *OrderRepo) UpdateCacheCart(ctx context.Context, userID uint, cart model.Cart) (*model.Cart, error) {
+	key := fmt.Sprintf("cart:%d", userID)
+	_, err := s.CartCache.Get(ctx, key)
+	if err != nil {
+		return nil, fmt.Errorf("獲取購物車失敗: %v", err)
+	}
+	cartJSON, err := json.Marshal(cart)
+	if err != nil {
+		return nil, fmt.Errorf("序列化購物車失敗: %v", err)
+	}
+
+	err = s.CartCache.Set(ctx, key, cartJSON, 24*time.Hour)
+	if err != nil {
+		return nil, fmt.Errorf("保存購物車失敗: %v", err)
+	}
+
+	return &cart, nil
 }
