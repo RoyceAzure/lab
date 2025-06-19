@@ -46,9 +46,10 @@ type CartItem struct {
 
 // for command and event
 type OrderItemData struct {
+	OrderID     string          `json:"order_id"`
 	ProductID   string          `json:"product_id"`
 	Quantity    int             `json:"quantity"`
 	Price       decimal.Decimal `json:"price"`
-	Amount      decimal.Decimal
-	ProductName string `json:"product_name"`
+	Amount      decimal.Decimal `json:"amount"`
+	ProductName string          `json:"product_name"`
 }

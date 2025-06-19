@@ -188,6 +188,11 @@ func (h *OrderCommandHandler) OrderCancelledCommandName(ctx context.Context, cmd
 	}
 
 	eventID := uuid.New().String()
+	orderItems, err := h.orderService.TransferOrderItemToOrderItemData(order.OrderItems...)
+	if err != nil {
+		return err
+	}
+
 	orderCancelledEvent := event.OrderCancelledEvent{
 		BaseEvent: event.BaseEvent{
 			EventID:     eventID,
@@ -195,6 +200,7 @@ func (h *OrderCommandHandler) OrderCancelledCommandName(ctx context.Context, cmd
 			EventType:   event.OrderCancelledEventName,
 			CreatedAt:   time.Now().UTC(),
 		},
+		Items:   orderItems,
 		OrderID: order.OrderID,
 		UserID:  user.UserID,
 		Message: cmd.Message,

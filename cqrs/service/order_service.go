@@ -58,19 +58,46 @@ func (o *OrderService) CalculateOrderAmount(orderItems ...model.OrderItemData) (
 	return amount, nil
 }
 
-func (o *OrderService) CalculateOrderAmountFromEntity(orderItems ...model.OrderItem) (decimal.Decimal, error) {
-	amount := decimal.NewFromInt(0)
+func TransferOrderItemDataToOrderItem(orderItemsDatas ...model.OrderItemData) ([]model.OrderItem, error) {
+	orderItems := []model.OrderItem{}
+	for _, orderItemData := range orderItemsDatas {
+		orderItems = append(orderItems, model.OrderItem{
+			OrderID:   orderItemData.OrderID,
+			ProductID: orderItemData.ProductID,
+			Quantity:  orderItemData.Quantity,
+		})
+	}
+	return orderItems, nil
+}
+
+func (o *OrderService) TransferOrderItemToOrderItemData(orderItems ...model.OrderItem) ([]model.OrderItemData, error) {
+	orderItemsData := []model.OrderItemData{}
 	for _, orderItem := range orderItems {
 		product, err := o.productRepo.GetProductByID(orderItem.ProductID)
 		if err != nil {
-			return decimal.Decimal{}, err
+			return nil, err
 		}
 		if product == nil {
-			return decimal.Decimal{}, ErrProductNotFound
+			return nil, ErrProductNotFound
 		}
-		amount = amount.Add(product.Price.Mul(decimal.NewFromInt(int64(orderItem.Quantity))))
+		orderItemsData = append(orderItemsData, model.OrderItemData{
+			OrderID:     orderItem.OrderID,
+			ProductID:   orderItem.ProductID,
+			Quantity:    orderItem.Quantity,
+			Price:       product.Price,
+			Amount:      product.Price.Mul(decimal.NewFromInt(int64(orderItem.Quantity))),
+			ProductName: product.Name,
+		})
 	}
-	return amount, nil
+	return orderItemsData, nil
+}
+
+func (o *OrderService) CalculateOrderAmountFromEntity(orderItems ...model.OrderItem) (decimal.Decimal, error) {
+	orderItemsData, err := o.TransferOrderItemToOrderItemData(orderItems...)
+	if err != nil {
+		return decimal.Decimal{}, err
+	}
+	return o.CalculateOrderAmount(orderItemsData...)
 }
 
 // 當修改購屋車商品數量時，檢查商品預留數量是否足夠
@@ -111,6 +138,15 @@ func (o *OrderService) GetOrder(ctx context.Context, orderID string) (*model.Ord
 	}
 
 	return order, nil
+}
+
+func (o *OrderService) UpdateOrder(ctx context.Context, order *model.Order) (*model.Order, error) {
+	err := o.orderRepo.UpdateOrder(order)
+	if err != nil {
+		return nil, err
+	}
+
+	return o.GetOrder(ctx, order.OrderID)
 }
 
 //購物車相關，使用全量替換方式

@@ -47,6 +47,7 @@ type OrderCancelledEvent struct {
 	OrderID string
 	UserID  uint
 	Message string
+	Items   []model.OrderItemData
 	State   uint
 }
 
