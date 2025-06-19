@@ -2,7 +2,6 @@ package command
 
 import (
 	"github.com/RoyceAzure/lab/cqrs/infra/repository/db/model"
-	"github.com/shopspring/decimal"
 )
 
 type OrderCreatedCommand struct {
@@ -50,9 +49,8 @@ func (c *OrderCancelledCommand) Type() CommandType {
 
 type OrderRefundedCommand struct {
 	BaseCommand
-	OrderID string          `json:"order_id"`
-	UserID  uint            `json:"user_id"`
-	Amount  decimal.Decimal `json:"amount"`
+	OrderID string `json:"order_id"`
+	UserID  uint   `json:"user_id"`
 }
 
 func (c *OrderRefundedCommand) Type() CommandType {

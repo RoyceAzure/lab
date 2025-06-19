@@ -9,9 +9,16 @@ import (
 	command "github.com/RoyceAzure/lab/cqrs/commnd"
 	"github.com/RoyceAzure/lab/cqrs/event"
 	"github.com/RoyceAzure/lab/cqrs/infra/repository/db"
+	"github.com/RoyceAzure/lab/cqrs/infra/repository/db/model"
 	"github.com/RoyceAzure/lab/cqrs/infra/repository/eventdb"
 	"github.com/RoyceAzure/lab/cqrs/service"
 	"github.com/google/uuid"
+)
+
+type OrrderCommandError error
+
+var (
+	errOrderCommand OrrderCommandError = errors.New("order_command_error")
 )
 
 type OrderCommandHandler struct {
@@ -49,7 +56,7 @@ func (h *OrderCommandHandler) HandleCommand(ctx context.Context, cmd command.Com
 			return h.OrderRefundedCommandName(ctx, c)
 		}
 	default:
-		return errors.New("unknown command type")
+		return errOrderCommand
 	}
 	return nil
 }
@@ -63,15 +70,10 @@ func (h *OrderCommandHandler) HandleOrderCreated(ctx context.Context, cmd *comma
 	}
 
 	// 驗證商品是否存在
-	for _, item := range cmd.Items {
-		product, err := h.productRepo.GetProductByID(item.ProductID)
-		if err != nil {
-			return err
-		}
-		if product == nil {
-			return errors.New("product not found")
-		}
-		//不驗證商品數量，因為商品數量已經在cart階段嚴格處理過
+	// 計算訂單總金額
+	amount, err := h.orderService.CalculateOrderAmount(cmd.Items...)
+	if err != nil {
+		return err
 	}
 
 	orderID := generateOrderID()
@@ -86,6 +88,8 @@ func (h *OrderCommandHandler) HandleOrderCreated(ctx context.Context, cmd *comma
 		OrderID: orderID,
 		UserID:  user.UserID,
 		Items:   cmd.Items,
+		Amount:  amount,
+		State:   model.OrderStatusPending,
 	}
 
 	err = h.eventDao.AppendEvent(ctx, orderCreatedEvent.AggregateID, string(event.OrderCreatedEventName), orderCreatedEvent)
@@ -94,10 +98,10 @@ func (h *OrderCommandHandler) HandleOrderCreated(ctx context.Context, cmd *comma
 	}
 
 	// 發佈事件
-	err = h.eventDao.PublishEvent(ctx, orderCreatedEvent)
-	if err != nil {
-		return err
-	}
+	// err = h.eventDao.PublishEvent(ctx, orderCreatedEvent)
+	// if err != nil {
+	// 	return err
+	// }
 
 	return nil
 }
@@ -112,9 +116,6 @@ func (h *OrderCommandHandler) HandleOrderConfirmed(ctx context.Context, cmd *com
 	if err != nil {
 		return err
 	}
-	if order == nil {
-		return errors.New("order not found")
-	}
 
 	eventID := uuid.New().String()
 	orderConfirmedEvent := event.OrderConfirmedEvent{
@@ -126,8 +127,14 @@ func (h *OrderCommandHandler) HandleOrderConfirmed(ctx context.Context, cmd *com
 		},
 		OrderID: order.OrderID,
 		UserID:  user.UserID,
+		State:   model.OrderStatusConfirmed,
 	}
 	err = h.eventDao.AppendEvent(ctx, orderConfirmedEvent.AggregateID, string(event.OrderConfirmedEventName), orderConfirmedEvent)
+	if err != nil {
+		return err
+	}
+
+	// 發佈事件
 	return nil
 }
 
@@ -141,9 +148,6 @@ func (h *OrderCommandHandler) OrderShippedCommandName(ctx context.Context, cmd *
 	if err != nil {
 		return err
 	}
-	if order == nil {
-		return errors.New("order not found")
-	}
 
 	//驗證TrackingCode
 	//驗證Carrier
@@ -152,7 +156,7 @@ func (h *OrderCommandHandler) OrderShippedCommandName(ctx context.Context, cmd *
 	orderShippedEvent := event.OrderShippedEvent{
 		BaseEvent: event.BaseEvent{
 			EventID:     eventID,
-			AggregateID: cmd.OrderID,
+			AggregateID: generateOrderAggregateID(order.OrderID),
 			EventType:   event.OrderShippedEventName,
 			CreatedAt:   time.Now().UTC(),
 		},
@@ -160,23 +164,94 @@ func (h *OrderCommandHandler) OrderShippedCommandName(ctx context.Context, cmd *
 		UserID:       user.UserID,
 		TrackingCode: cmd.TrackingCode,
 		Carrier:      cmd.Carrier,
+		State:        model.OrderStatusShipped,
 	}
 
 	err = h.eventDao.AppendEvent(ctx, orderShippedEvent.AggregateID, string(event.OrderShippedEventName), orderShippedEvent)
+	if err != nil {
+		return err
+	}
+
+	// 發佈事件
 	return nil
 }
 
-func (h *OrderCommandHandler) OrderCancelledCommandName(command *command.OrderConfirmedCommand) error {
+func (h *OrderCommandHandler) OrderCancelledCommandName(ctx context.Context, cmd *command.OrderCancelledCommand) error {
+	user, err := h.userService.GetUser(ctx, cmd.UserID)
+	if err != nil {
+		return err
+	}
+
+	order, err := h.orderService.GetOrder(ctx, cmd.OrderID)
+	if err != nil {
+		return err
+	}
+
+	eventID := uuid.New().String()
+	orderCancelledEvent := event.OrderCancelledEvent{
+		BaseEvent: event.BaseEvent{
+			EventID:     eventID,
+			AggregateID: generateOrderAggregateID(order.OrderID),
+			EventType:   event.OrderCancelledEventName,
+			CreatedAt:   time.Now().UTC(),
+		},
+		OrderID: order.OrderID,
+		UserID:  user.UserID,
+		Message: cmd.Message,
+		State:   model.OrderStatusCancelled,
+	}
+
+	err = h.eventDao.AppendEvent(ctx, orderCancelledEvent.AggregateID, string(event.OrderCancelledEventName), orderCancelledEvent)
+	if err != nil {
+		return err
+	}
+
+	// 發佈事件
 	return nil
 }
 
-func (h *OrderCommandHandler) OrderRefundedCommandName(command *command.OrderConfirmedCommand) error {
+func (h *OrderCommandHandler) OrderRefundedCommandName(ctx context.Context, cmd *command.OrderRefundedCommand) error {
+	user, err := h.userService.GetUser(ctx, cmd.UserID)
+	if err != nil {
+		return err
+	}
+
+	order, err := h.orderService.GetOrder(ctx, cmd.OrderID)
+	if err != nil {
+		return err
+	}
+
+	amount, err := h.orderService.CalculateOrderAmountFromEntity(order.OrderItems...)
+	if err != nil {
+		return err
+	}
+
+	eventID := uuid.New().String()
+	orderRefundedEvent := event.OrderRefundedEvent{
+		BaseEvent: event.BaseEvent{
+			EventID:     eventID,
+			AggregateID: generateOrderAggregateID(order.OrderID),
+			EventType:   event.OrderRefundedEventName,
+			CreatedAt:   time.Now().UTC(),
+		},
+		OrderID: order.OrderID,
+		UserID:  user.UserID,
+		Amount:  amount,
+		State:   model.OrderStatusRefunded,
+	}
+
+	err = h.eventDao.AppendEvent(ctx, orderRefundedEvent.AggregateID, string(event.OrderRefundedEventName), orderRefundedEvent)
+	if err != nil {
+		return err
+	}
+
+	// 發佈事件
 	return nil
 }
 
-func generateOrderID() uint {
-	return uint(time.Now().UnixNano()) // 簡化版
+func generateOrderID() string {
+	return fmt.Sprintf("%d", time.Now().UnixNano()) // 簡化版
 }
-func generateOrderAggregateID(orderID uint) string {
-	return fmt.Sprintf("order-%d", orderID)
+func generateOrderAggregateID(orderID string) string {
+	return fmt.Sprintf("order-%s", orderID)
 }

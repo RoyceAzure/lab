@@ -10,6 +10,8 @@ type OrderCreatedEvent struct {
 	OrderID string
 	UserID  uint
 	Items   []model.OrderItemData
+	Amount  decimal.Decimal
+	State   uint
 }
 
 func (e *OrderCreatedEvent) Type() EventType {
@@ -20,6 +22,7 @@ type OrderConfirmedEvent struct {
 	BaseEvent
 	OrderID string
 	UserID  uint
+	State   uint
 }
 
 func (e *OrderConfirmedEvent) Type() EventType {
@@ -32,6 +35,7 @@ type OrderShippedEvent struct {
 	UserID       uint
 	TrackingCode string // 物流追蹤號
 	Carrier      string // 物流商
+	State        uint
 }
 
 func (e *OrderShippedEvent) Type() EventType {
@@ -43,6 +47,7 @@ type OrderCancelledEvent struct {
 	OrderID string
 	UserID  uint
 	Message string
+	State   uint
 }
 
 func (e *OrderCancelledEvent) Type() EventType {
@@ -54,6 +59,7 @@ type OrderRefundedEvent struct {
 	OrderID string
 	UserID  uint
 	Amount  decimal.Decimal
+	State   uint
 }
 
 func (e *OrderRefundedEvent) Type() EventType {

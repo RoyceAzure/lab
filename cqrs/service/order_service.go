@@ -14,6 +14,7 @@ var (
 	ErrProductReservedNotEnough = errors.New("product reserved is not enough")
 	ErrCartNotExist             = errors.New("cart is not exist")
 	ErrOrderNotExist            = errors.New("order is not exist")
+	ErrProductNotFound          = errors.New("product not found")
 )
 
 type OrderService struct {
@@ -40,6 +41,36 @@ func (o *OrderService) IsProductReservedEnough(productID string, quantity int) e
 		return ErrProductReservedNotEnough
 	}
 	return nil
+}
+
+func (o *OrderService) CalculateOrderAmount(orderItems ...model.OrderItemData) (decimal.Decimal, error) {
+	amount := decimal.NewFromInt(0)
+	for _, orderItem := range orderItems {
+		product, err := o.productRepo.GetProductByID(orderItem.ProductID)
+		if err != nil {
+			return decimal.Decimal{}, err
+		}
+		if product == nil {
+			return decimal.Decimal{}, ErrProductNotFound
+		}
+		amount = amount.Add(product.Price.Mul(decimal.NewFromInt(int64(orderItem.Quantity))))
+	}
+	return amount, nil
+}
+
+func (o *OrderService) CalculateOrderAmountFromEntity(orderItems ...model.OrderItem) (decimal.Decimal, error) {
+	amount := decimal.NewFromInt(0)
+	for _, orderItem := range orderItems {
+		product, err := o.productRepo.GetProductByID(orderItem.ProductID)
+		if err != nil {
+			return decimal.Decimal{}, err
+		}
+		if product == nil {
+			return decimal.Decimal{}, ErrProductNotFound
+		}
+		amount = amount.Add(product.Price.Mul(decimal.NewFromInt(int64(orderItem.Quantity))))
+	}
+	return amount, nil
 }
 
 // 當修改購屋車商品數量時，檢查商品預留數量是否足夠
