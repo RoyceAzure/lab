@@ -8,7 +8,7 @@ import (
 )
 
 type Order struct {
-	OrderID    uint            `gorm:"primaryKey" json:"order_id"`
+	OrderID    string          `gorm:"primaryKey;type:varchar(255)" json:"order_id"`
 	UserID     uint            `gorm:"not null" json:"user_id"`                                           // 外鍵，關聯到 User
 	OrderItems []OrderItem     `gorm:"foreignKey:OrderID;constraint:OnDelete:CASCADE" json:"order_items"` // 一對多，級聯刪除
 	Amount     decimal.Decimal `gorm:"not null;type:decimal(10,2)" json:"amount"`
@@ -17,9 +17,9 @@ type Order struct {
 }
 
 type OrderItem struct {
-	OrderID   uint `gorm:"primaryKey" json:"order_id"`   // 外鍵，關聯到 Order
-	ProductID uint `gorm:"primaryKey" json:"product_id"` // 外鍵，關聯到 Product
-	Quantity  int  `gorm:"not null" json:"quantity"`
+	OrderID   string `gorm:"primaryKey;type:varchar(255)" json:"order_id"`   // 外鍵，關聯到 Order
+	ProductID string `gorm:"primaryKey;type:varchar(255)" json:"product_id"` // 外鍵，關聯到 Product
+	Quantity  int    `gorm:"not null" json:"quantity"`
 	BaseModel
 }
 
@@ -31,6 +31,15 @@ type Cart struct {
 }
 
 type CartItem struct {
-	ProductID uint `json:"product_id"`
-	Quantity  int  `json:"quantity"`
+	ProductID string `json:"product_id"`
+	Quantity  int    `json:"quantity"`
+}
+
+// for command and event
+type OrderItemData struct {
+	ProductID   string          `json:"product_id"`
+	Quantity    int             `json:"quantity"`
+	Price       decimal.Decimal `json:"price"`
+	Amount      decimal.Decimal
+	ProductName string `json:"product_name"`
 }

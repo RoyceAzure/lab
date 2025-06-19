@@ -16,9 +16,7 @@ func NewOrderEventHandler(eventDao *eventdb.EventDao) *OrderEventHandler {
 	return &OrderEventHandler{eventDao: eventDao}
 }
 
-// 儲存到event db
-// 有可能需要透過kafka發布event
-func (h *OrderEventHandler) HandlerEvent(ctx context.Context, evt event.Event) error {
+func (h *OrderEventHandler) HandleEvent(ctx context.Context, evt event.Event) error {
 	switch evt.Type() {
 	case event.OrderCreatedEventName:
 		// 處理 OrderConfirmedEvent

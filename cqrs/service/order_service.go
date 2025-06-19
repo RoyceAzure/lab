@@ -13,6 +13,7 @@ import (
 var (
 	ErrProductReservedNotEnough = errors.New("product reserved is not enough")
 	ErrCartNotExist             = errors.New("cart is not exist")
+	ErrOrderNotExist            = errors.New("order is not exist")
 )
 
 type OrderService struct {
@@ -26,7 +27,7 @@ func NewOrderService(orderRepo *db.OrderRepo, productRepo *db.ProductRepo) *Orde
 }
 
 // 檢查商品預留數量是否足夠，於創建Order時使用
-func (o *OrderService) IsProductReservedEnough(productID uint, quantity int) error {
+func (o *OrderService) IsProductReservedEnough(productID string, quantity int) error {
 	// 檢查商品預留數量是否足夠
 	// 檢查redis 該購物車是否有商品
 	// 取出購物車商品數量
@@ -42,7 +43,7 @@ func (o *OrderService) IsProductReservedEnough(productID uint, quantity int) err
 }
 
 // 當修改購屋車商品數量時，檢查商品預留數量是否足夠
-func (o *OrderService) IsProductStockEnoughForUpdate(orderID uint, productID uint, quantity int) error {
+func (o *OrderService) IsProductStockEnoughForUpdate(orderID string, productID string, quantity int) error {
 
 	bais := 10 // 假設原本購屋車A商品數量為10
 
@@ -67,6 +68,18 @@ func (o *OrderService) CalculateCartAmount(cartItems ...model.CartItem) (decimal
 		amount = amount.Add(product.Price.Mul(decimal.NewFromInt(int64(cartItem.Quantity))))
 	}
 	return amount, nil
+}
+
+func (o *OrderService) GetOrder(ctx context.Context, orderID string) (*model.Order, error) {
+	order, err := o.orderRepo.GetOrderByID(orderID)
+	if err != nil {
+		return nil, err
+	}
+	if order == nil {
+		return nil, ErrOrderNotExist
+	}
+
+	return order, nil
 }
 
 //購物車相關，使用全量替換方式

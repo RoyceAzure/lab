@@ -27,7 +27,7 @@ func (s *OrderRepo) CreateOrder(order *model.Order) error {
 }
 
 // Read - 根據ID查詢訂單
-func (s *OrderRepo) GetOrderByID(id uint) (*model.Order, error) {
+func (s *OrderRepo) GetOrderByID(id string) (*model.Order, error) {
 	var order model.Order
 	err := s.db.Preload("OrderItems").First(&order, id).Error
 	if err != nil {
@@ -74,22 +74,22 @@ func (s *OrderRepo) UpdateOrder(order *model.Order) error {
 }
 
 // Update - 部分更新訂單
-func (s *OrderRepo) UpdateOrderFields(id uint, updates map[string]interface{}) error {
+func (s *OrderRepo) UpdateOrderFields(id string, updates map[string]interface{}) error {
 	return s.db.Model(&model.Order{}).Where("order_id = ?", id).Updates(updates).Error
 }
 
 // Update - 更新訂單金額
-func (s *OrderRepo) UpdateOrderAmount(id uint, amount float64) error {
+func (s *OrderRepo) UpdateOrderAmount(id string, amount float64) error {
 	return s.db.Model(&model.Order{}).Where("order_id = ?", id).Update("amount", amount).Error
 }
 
 // Delete - 軟刪除訂單
-func (s *OrderRepo) DeleteOrder(id uint) error {
+func (s *OrderRepo) DeleteOrder(id string) error {
 	return s.db.Delete(&model.Order{}, id).Error
 }
 
 // Delete - 硬刪除訂單
-func (s *OrderRepo) HardDeleteOrder(id uint) error {
+func (s *OrderRepo) HardDeleteOrder(id string) error {
 	return s.db.Unscoped().Delete(&model.Order{}, id).Error
 }
 

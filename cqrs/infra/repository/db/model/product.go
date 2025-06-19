@@ -5,7 +5,7 @@ import (
 )
 
 type Product struct {
-	ProductID   uint            `gorm:"primaryKey"`
+	ProductID   string          `gorm:"primaryKey;type:varchar(255)"`
 	Code        string          `gorm:"not null;type:varchar(100);unique"`
 	Name        string          `gorm:"not null;type:varchar(100)"`
 	Price       decimal.Decimal `gorm:"not null;type:decimal(10,2)"`

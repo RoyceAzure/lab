@@ -104,7 +104,7 @@ func (suite *OrderRepoTestSuite) TestGetOrderByID() {
 }
 
 func (suite *OrderRepoTestSuite) TestGetOrderByID_NotFound() {
-	foundOrder, err := suite.orderRepo.GetOrderByID(999)
+	foundOrder, err := suite.orderRepo.GetOrderByID("999")
 
 	require.Error(suite.T(), err)
 	require.Nil(suite.T(), foundOrder)
@@ -306,7 +306,7 @@ func (suite *OrderRepoTestSuite) TestCreateCacheCart() {
 		UserID: user.UserID,
 		OrderItems: []model.CartItem{
 			{
-				ProductID: 1,
+				ProductID: "1",
 				Quantity:  2,
 			},
 		},
@@ -325,15 +325,15 @@ func (suite *OrderRepoTestSuite) TestGetCacheCart() {
 		UserID: user.UserID,
 		OrderItems: []model.CartItem{
 			{
-				ProductID: 1,
+				ProductID: "1",
 				Quantity:  2,
 			},
 			{
-				ProductID: 2,
+				ProductID: "2",
 				Quantity:  3,
 			},
 			{
-				ProductID: 3,
+				ProductID: "3",
 				Quantity:  4,
 			},
 		},
@@ -379,7 +379,7 @@ func (suite *OrderRepoTestSuite) TestUpdateCacheCart() {
 		UserID: user.UserID,
 		OrderItems: []model.CartItem{
 			{
-				ProductID: 1,
+				ProductID: "1",
 				Quantity:  2,
 			},
 		},
@@ -395,11 +395,11 @@ func (suite *OrderRepoTestSuite) TestUpdateCacheCart() {
 		UserID: user.UserID,
 		OrderItems: []model.CartItem{
 			{
-				ProductID: 1,
+				ProductID: "1",
 				Quantity:  5, // 修改數量
 			},
 			{
-				ProductID: 2,
+				ProductID: "2",
 				Quantity:  3, // 新增商品
 			},
 		},
@@ -443,7 +443,7 @@ func (suite *OrderRepoTestSuite) TestUpdateCacheCart_NotFound() {
 		UserID: user.UserID,
 		OrderItems: []model.CartItem{
 			{
-				ProductID: 1,
+				ProductID: "1",
 				Quantity:  5,
 			},
 		},

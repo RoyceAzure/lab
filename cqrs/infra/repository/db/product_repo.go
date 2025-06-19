@@ -27,8 +27,8 @@ func (s *ProductRepo) CreateProduct(product *model.Product) error {
 }
 
 // Read - 根據ID查詢商品
-func (s *ProductRepo) GetProductByID(id uint) (*model.Product, error) {
-	redisKey := fmt.Sprintf("%d", id)
+func (s *ProductRepo) GetProductByID(id string) (*model.Product, error) {
+	redisKey := id
 	product, err := s.ProductCache.HGetAll(context.Background(), redisKey)
 	if err != nil {
 		return nil, err
@@ -51,7 +51,7 @@ func (s *ProductRepo) GetProductByID(id uint) (*model.Product, error) {
 }
 
 // convertRedisMapToProduct 將 Redis 的 map[string]string 轉換為 model.Product
-func convertRedisMapToProduct(id uint, productMap map[string]any) (*model.Product, error) {
+func convertRedisMapToProduct(id string, productMap map[string]any) (*model.Product, error) {
 	price, err := decimal.NewFromString(productMap["price"].(string))
 	if err != nil {
 		return nil, fmt.Errorf("invalid price format: %v", err)
@@ -117,7 +117,7 @@ func convertProductFromRedis(key string, product map[string]any) (*model.Product
 		return nil, err
 	}
 	return &model.Product{
-		ProductID:   uint(productID),
+		ProductID:   fmt.Sprintf("%d", productID),
 		Code:        product["code"].(string),
 		Name:        product["name"].(string),
 		Price:       price,
@@ -187,32 +187,32 @@ func (s *ProductRepo) UpdateProduct(product *model.Product) error {
 }
 
 // Update - 部分更新商品
-func (s *ProductRepo) UpdateProductFields(id uint, updates map[string]interface{}) error {
+func (s *ProductRepo) UpdateProductFields(id string, updates map[string]interface{}) error {
 	return s.db.Model(&model.Product{}).Where("product_id = ?", id).Updates(updates).Error
 }
 
 // Update - 更新庫存
-func (s *ProductRepo) UpdateStock(id uint, stock uint) error {
+func (s *ProductRepo) UpdateStock(id string, stock uint) error {
 	return s.db.Model(&model.Product{}).Where("product_id = ?", id).Update("stock", stock).Error
 }
 
 // Update - 增加庫存
-func (s *ProductRepo) AddStock(id uint, quantity uint) error {
+func (s *ProductRepo) AddStock(id string, quantity uint) error {
 	return s.db.Model(&model.Product{}).Where("product_id = ?", id).Update("stock", gorm.Expr("stock + ?", quantity)).Error
 }
 
 // Update - 減少庫存
-func (s *ProductRepo) ReduceStock(id uint, quantity uint) error {
+func (s *ProductRepo) ReduceStock(id string, quantity uint) error {
 	return s.db.Model(&model.Product{}).Where("product_id = ? AND stock >= ?", id, quantity).Update("stock", gorm.Expr("stock - ?", quantity)).Error
 }
 
 // Delete - 軟刪除商品
-func (s *ProductRepo) DeleteProduct(id uint) error {
+func (s *ProductRepo) DeleteProduct(id string) error {
 	return s.db.Delete(&model.Product{}, id).Error
 }
 
 // Delete - 硬刪除商品
-func (s *ProductRepo) HardDeleteProduct(id uint) error {
+func (s *ProductRepo) HardDeleteProduct(id string) error {
 	return s.db.Unscoped().Delete(&model.Product{}, id).Error
 }
 

@@ -1,28 +1,60 @@
 package command
 
-type CreateOrderCommand struct {
-	UserID uint
-	Items  []OrderItemCommand
+import (
+	"github.com/RoyceAzure/lab/cqrs/infra/repository/db/model"
+	"github.com/shopspring/decimal"
+)
+
+type OrderCreatedCommand struct {
+	BaseCommand
+	UserID uint                  `json:"user_id"`
+	Items  []model.OrderItemData `json:"items"`
 }
 
-type OrderItemCommand struct {
-	ProductID uint
-	Quantity  int
+func (c *OrderCreatedCommand) Type() CommandType {
+	return OrderCreatedCommandName
 }
 
-type AddProductCommand struct {
-	OrderID   uint
-	ProductID uint
-	Quantity  int
+type OrderConfirmedCommand struct {
+	BaseCommand
+	OrderID string `json:"order_id"`
+	UserID  uint   `json:"user_id"`
 }
 
-type UpdateProductCommand struct {
-	OrderID   uint
-	ProductID uint
-	Quantity  int
+func (c *OrderConfirmedCommand) Type() CommandType {
+	return OrderConfirmedCommandName
 }
 
-type DeleteProductCommand struct {
-	OrderID   uint
-	ProductID uint
+type OrderShippedCommand struct {
+	BaseCommand
+	OrderID      string `json:"order_id"`
+	UserID       uint   `json:"user_id"`
+	TrackingCode string `json:"tracking_code"` // 物流追蹤號
+	Carrier      string `json:"carrier"`       // 物流商
+}
+
+func (c *OrderShippedCommand) Type() CommandType {
+	return OrderShippedCommandName
+}
+
+type OrderCancelledCommand struct {
+	BaseCommand
+	OrderID string `json:"order_id"`
+	UserID  uint   `json:"user_id"`
+	Message string `json:"message"`
+}
+
+func (c *OrderCancelledCommand) Type() CommandType {
+	return OrderCancelledCommandName
+}
+
+type OrderRefundedCommand struct {
+	BaseCommand
+	OrderID string          `json:"order_id"`
+	UserID  uint            `json:"user_id"`
+	Amount  decimal.Decimal `json:"amount"`
+}
+
+func (c *OrderRefundedCommand) Type() CommandType {
+	return OrderRefundedCommandName
 }
