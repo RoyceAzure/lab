@@ -45,15 +45,15 @@ func (h *OrderCommandHandler) HandleCommand(ctx context.Context, cmd command.Com
 		}
 	case command.OrderShippedCommandName:
 		if c, ok := cmd.(*command.OrderShippedCommand); ok {
-			return h.OrderShippedCommandName(ctx, c)
+			return h.OrderShippedCommand(ctx, c)
 		}
 	case command.OrderCancelledCommandName:
 		if c, ok := cmd.(*command.OrderCancelledCommand); ok {
-			return h.OrderCancelledCommandName(ctx, c)
+			return h.OrderCancelledCommand(ctx, c)
 		}
 	case command.OrderRefundedCommandName:
 		if c, ok := cmd.(*command.OrderRefundedCommand); ok {
-			return h.OrderRefundedCommandName(ctx, c)
+			return h.OrderRefundedCommand(ctx, c)
 		}
 	default:
 		return errOrderCommand
@@ -138,7 +138,7 @@ func (h *OrderCommandHandler) HandleOrderConfirmed(ctx context.Context, cmd *com
 	return nil
 }
 
-func (h *OrderCommandHandler) OrderShippedCommandName(ctx context.Context, cmd *command.OrderShippedCommand) error {
+func (h *OrderCommandHandler) OrderShippedCommand(ctx context.Context, cmd *command.OrderShippedCommand) error {
 	user, err := h.userService.GetUser(ctx, cmd.UserID)
 	if err != nil {
 		return err
@@ -176,7 +176,7 @@ func (h *OrderCommandHandler) OrderShippedCommandName(ctx context.Context, cmd *
 	return nil
 }
 
-func (h *OrderCommandHandler) OrderCancelledCommandName(ctx context.Context, cmd *command.OrderCancelledCommand) error {
+func (h *OrderCommandHandler) OrderCancelledCommand(ctx context.Context, cmd *command.OrderCancelledCommand) error {
 	user, err := h.userService.GetUser(ctx, cmd.UserID)
 	if err != nil {
 		return err
@@ -216,7 +216,7 @@ func (h *OrderCommandHandler) OrderCancelledCommandName(ctx context.Context, cmd
 	return nil
 }
 
-func (h *OrderCommandHandler) OrderRefundedCommandName(ctx context.Context, cmd *command.OrderRefundedCommand) error {
+func (h *OrderCommandHandler) OrderRefundedCommand(ctx context.Context, cmd *command.OrderRefundedCommand) error {
 	user, err := h.userService.GetUser(ctx, cmd.UserID)
 	if err != nil {
 		return err
