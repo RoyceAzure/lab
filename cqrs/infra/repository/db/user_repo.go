@@ -1,6 +1,8 @@
 package db
 
-import "github.com/RoyceAzure/lab/cqrs/infra/repository/db/model"
+import (
+	"github.com/RoyceAzure/lab/cqrs/infra/repository/db/model"
+)
 
 type UserRepo struct {
 	dbDao *DbDao
@@ -16,7 +18,7 @@ func (s *UserRepo) CreateUser(user *model.User) error {
 }
 
 // Read - 根據ID查詢用戶
-func (s *UserRepo) GetUserByID(id uint) (*model.User, error) {
+func (s *UserRepo) GetUserByID(id int) (*model.User, error) {
 	var user model.User
 	err := s.dbDao.First(&user, id).Error
 	if err != nil {
@@ -48,17 +50,17 @@ func (s *UserRepo) UpdateUser(user *model.User) error {
 }
 
 // Update - 部分更新用戶
-func (s *UserRepo) PatchUserFields(id uint, updates map[string]interface{}) error {
+func (s *UserRepo) PatchUserFields(id int, updates map[string]interface{}) error {
 	return s.dbDao.Model(&model.User{}).Where("user_id = ?", id).Updates(updates).Error
 }
 
 // Delete - 軟刪除用戶
-func (s *UserRepo) DeleteUser(id uint) error {
+func (s *UserRepo) DeleteUser(id int) error {
 	return s.dbDao.Delete(&model.User{}, id).Error
 }
 
 // Delete - 硬刪除用戶
-func (s *UserRepo) HardDeleteUser(id uint) error {
+func (s *UserRepo) HardDeleteUser(id int) error {
 	return s.dbDao.Unscoped().Delete(&model.User{}, id).Error
 }
 

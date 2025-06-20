@@ -23,7 +23,7 @@ func NewCartRepo(cartCache redis_cache.Cache) *CartRepo {
 // 購物車要使用MHSET
 // 購物車更新 orderItems 要能支援delta增減
 // 若orderItems 數量為0，則刪除該商品
-func (s *CartRepo) CreateCacheCart(ctx context.Context, userID uint, cart model.Cart) (uuid.UUID, error) {
+func (s *CartRepo) CreateCacheCart(ctx context.Context, userID int, cart model.Cart) (uuid.UUID, error) {
 	//購物車主資料
 	cartId := uuid.New()
 	cart.CartID = cartId
@@ -41,7 +41,7 @@ func (s *CartRepo) CreateCacheCart(ctx context.Context, userID uint, cart model.
 }
 
 // 取得購物車
-func (s *CartRepo) GetCacheCart(ctx context.Context, userID uint) (*model.Cart, error) {
+func (s *CartRepo) GetCacheCart(ctx context.Context, userID int) (*model.Cart, error) {
 	key := fmt.Sprintf("cart:%d", userID)
 	cartJSON, err := s.CartCache.Get(ctx, key)
 	if err != nil {
@@ -61,7 +61,7 @@ func (s *CartRepo) GetCacheCart(ctx context.Context, userID uint) (*model.Cart, 
 }
 
 // 修改購物車
-func (s *CartRepo) UpdateCacheCart(ctx context.Context, userID uint, cart model.Cart) (*model.Cart, error) {
+func (s *CartRepo) UpdateCacheCart(ctx context.Context, userID int, cart model.Cart) (*model.Cart, error) {
 	key := fmt.Sprintf("cart:%d", userID)
 	_, err := s.CartCache.Get(ctx, key)
 	if err != nil {

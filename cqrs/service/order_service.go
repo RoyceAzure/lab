@@ -6,6 +6,7 @@ import (
 
 	"github.com/RoyceAzure/lab/cqrs/infra/repository/db"
 	"github.com/RoyceAzure/lab/cqrs/infra/repository/db/model"
+	"github.com/RoyceAzure/lab/cqrs/infra/repository/redis_repo"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
@@ -20,11 +21,12 @@ var (
 type OrderService struct {
 	orderRepo   *db.OrderRepo
 	productRepo *db.ProductRepo
+	cartRepo    *redis_repo.CartRepo
 }
 
 // 購物車階段 只會寫入到redis, 不會寫入到db，所有購物車資料都要去redis取
-func NewOrderService(orderRepo *db.OrderRepo, productRepo *db.ProductRepo) *OrderService {
-	return &OrderService{orderRepo: orderRepo, productRepo: productRepo}
+func NewOrderService(orderRepo *db.OrderRepo, productRepo *db.ProductRepo, cartRepo *redis_repo.CartRepo) *OrderService {
+	return &OrderService{orderRepo: orderRepo, productRepo: productRepo, cartRepo: cartRepo}
 }
 
 // 檢查商品預留數量是否足夠，於創建Order時使用
@@ -162,7 +164,7 @@ func (o *OrderService) UpdateOrder(ctx context.Context, order *model.Order) (*mo
 //	cartId (uuid.UUID): 購物車ID
 //
 // 錯誤:
-func (o *OrderService) CreateCacheCart(ctx context.Context, userID uint, cartItems ...model.CartItem) (uuid.UUID, error) {
+func (o *OrderService) CreateCacheCart(ctx context.Context, userID int, cartItems ...model.CartItem) (uuid.UUID, error) {
 	//驗證使用者是否存在
 	// user, err := o.userRepo.GetUserByID(userID)
 	// if err != nil {
@@ -174,7 +176,7 @@ func (o *OrderService) CreateCacheCart(ctx context.Context, userID uint, cartIte
 		return uuid.UUID{}, err
 	}
 
-	cartId, err := o.orderRepo.CreateCacheCart(ctx, userID, model.Cart{
+	cartId, err := o.cartRepo.CreateCacheCart(ctx, userID, model.Cart{
 		UserID:     userID,
 		Amount:     amount,
 		OrderItems: cartItems,
@@ -185,13 +187,13 @@ func (o *OrderService) CreateCacheCart(ctx context.Context, userID uint, cartIte
 	return cartId, nil
 }
 
-func (o *OrderService) GetCacheCart(ctx context.Context, userID uint) (*model.Cart, error) {
+func (o *OrderService) GetCacheCart(ctx context.Context, userID int) (*model.Cart, error) {
 	//驗證使用者是否存在
 	// user, err := o.userRepo.GetUserByID(userID)
 	// if err != nil {
 	// 	return uuid.UUID{}, err
 	// }
-	return o.orderRepo.GetCacheCart(ctx, userID)
+	return o.cartRepo.GetCacheCart(ctx, userID)
 }
 
 // 購物車修改商品與商品數量，需要購物車OrderItem修改後的狀態
@@ -203,7 +205,7 @@ func (o *OrderService) GetCacheCart(ctx context.Context, userID uint) (*model.Ca
 //	quantity(int): 商品數量
 //
 // 返回值:
-func (o *OrderService) UpdateCacheCart(ctx context.Context, userID uint, cartItems ...model.CartItem) (*model.Cart, error) {
+func (o *OrderService) UpdateCacheCart(ctx context.Context, userID int, cartItems ...model.CartItem) (*model.Cart, error) {
 	//驗證使用者是否存在
 	// user, err := o.userRepo.GetUserByID(userID)
 	// if err != nil {
@@ -222,7 +224,7 @@ func (o *OrderService) UpdateCacheCart(ctx context.Context, userID uint, cartIte
 		return nil, ErrCartNotExist
 	}
 
-	return o.orderRepo.UpdateCacheCart(ctx, userID, model.Cart{
+	return o.cartRepo.UpdateCacheCart(ctx, userID, model.Cart{
 		CartID:     cart.CartID,
 		UserID:     userID,
 		Amount:     amount,

@@ -20,7 +20,7 @@ func NewUserService(userRepo *db.UserRepo) *UserService {
 	return &UserService{userRepo: userRepo}
 }
 
-func (u *UserService) GetUser(ctx context.Context, userID uint) (*model.User, error) {
+func (u *UserService) GetUser(ctx context.Context, userID int) (*model.User, error) {
 	user, err := u.userRepo.GetUserByID(userID)
 	if err != nil {
 		return nil, err

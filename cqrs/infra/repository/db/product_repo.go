@@ -8,7 +8,8 @@ import (
 	"time"
 
 	"github.com/RoyceAzure/lab/cqrs/infra/repository/db/model"
-	redis_cache "github.com/RoyceAzure/lab/rj_redis/pkg/cache/redis"
+
+	"github.com/RoyceAzure/lab/rj_redis/pkg/cache"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
@@ -20,11 +21,11 @@ var (
 )
 
 type ProductRepo struct {
-	ProductCache *redis_cache.RedisCache
+	ProductCache cache.Cache
 	db           *DbDao
 }
 
-func NewProductRepo(db *DbDao, redisCache *redis_cache.RedisCache) *ProductRepo {
+func NewProductRepo(db *DbDao, redisCache cache.Cache) *ProductRepo {
 	return &ProductRepo{db: db, ProductCache: redisCache}
 }
 
