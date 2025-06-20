@@ -1,21 +1,26 @@
 package event
 
 import (
+	"github.com/RoyceAzure/lab/cqrs/command"
 	"github.com/RoyceAzure/lab/cqrs/infra/repository/db/model"
-	"github.com/shopspring/decimal"
 )
 
 type CartCreatedEvent struct {
 	BaseEvent
 	UserID int
 	Items  []model.OrderItemData
-	Amount decimal.Decimal
 }
 
 type CartCreatedFailedEvent struct {
 	BaseEvent
 	UserID  int
 	Message string
+}
+
+type CartUpdatedEvent struct {
+	BaseEvent
+	UserID  int
+	Details []command.CartUpdatedDetial
 }
 
 func (e *CartCreatedFailedEvent) Type() EventType {

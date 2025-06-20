@@ -7,7 +7,6 @@ import (
 	"github.com/RoyceAzure/lab/cqrs/infra/repository/db"
 	"github.com/RoyceAzure/lab/cqrs/infra/repository/db/model"
 	"github.com/RoyceAzure/lab/cqrs/infra/repository/redis_repo"
-	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
@@ -149,85 +148,4 @@ func (o *OrderService) UpdateOrder(ctx context.Context, order *model.Order) (*mo
 	}
 
 	return o.GetOrder(ctx, order.OrderID)
-}
-
-//購物車相關，使用全量替換方式
-
-// 創建購物車
-// 參數:
-//
-//	ctx: 上下文
-//	userID(uint): 用戶ID
-//
-// 返回值:
-//
-//	cartId (uuid.UUID): 購物車ID
-//
-// 錯誤:
-func (o *OrderService) CreateCacheCart(ctx context.Context, userID int, cartItems ...model.CartItem) (uuid.UUID, error) {
-	//驗證使用者是否存在
-	// user, err := o.userRepo.GetUserByID(userID)
-	// if err != nil {
-	// 	return uuid.UUID{}, err
-	// }
-
-	amount, err := o.CalculateCartAmount(ctx, cartItems...)
-	if err != nil {
-		return uuid.UUID{}, err
-	}
-
-	cartId, err := o.cartRepo.CreateCacheCart(ctx, userID, model.Cart{
-		UserID:     userID,
-		Amount:     amount,
-		OrderItems: cartItems,
-	})
-	if err != nil {
-		return uuid.UUID{}, err
-	}
-	return cartId, nil
-}
-
-func (o *OrderService) GetCacheCart(ctx context.Context, userID int) (*model.Cart, error) {
-	//驗證使用者是否存在
-	// user, err := o.userRepo.GetUserByID(userID)
-	// if err != nil {
-	// 	return uuid.UUID{}, err
-	// }
-	return o.cartRepo.GetCacheCart(ctx, userID)
-}
-
-// 購物車修改商品與商品數量，需要購物車OrderItem修改後的狀態
-// 參數:
-//
-//	ctx: 上下文
-//	userID(uint): 用戶ID
-//	productID(uint): 商品ID
-//	quantity(int): 商品數量
-//
-// 返回值:
-func (o *OrderService) UpdateCacheCart(ctx context.Context, userID int, cartItems ...model.CartItem) (*model.Cart, error) {
-	//驗證使用者是否存在
-	// user, err := o.userRepo.GetUserByID(userID)
-	// if err != nil {
-	// 	return uuid.UUID{}, err
-	// }
-	amount, err := o.CalculateCartAmount(ctx, cartItems...)
-	if err != nil {
-		return nil, err
-	}
-
-	cart, err := o.GetCacheCart(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	if cart == nil {
-		return nil, ErrCartNotExist
-	}
-
-	return o.cartRepo.UpdateCacheCart(ctx, userID, model.Cart{
-		CartID:     cart.CartID,
-		UserID:     userID,
-		Amount:     amount,
-		OrderItems: cartItems,
-	})
 }

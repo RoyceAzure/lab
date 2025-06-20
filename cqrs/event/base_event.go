@@ -19,6 +19,8 @@ const (
 	OrderRefundedEventName     EventType = "OrderRefunded"
 	CartCreatedEventName       EventType = "CartCreated"
 	CartCreatedFailedEventName EventType = "CartCreatedFailed"
+	CartUpdatedEventName       EventType = "CartUpdated"
+	CartUpdatedFailedEventName EventType = "CartUpdatedFailed"
 )
 
 type Event interface {
