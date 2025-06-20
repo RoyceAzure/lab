@@ -33,45 +33,23 @@ func NewOrderCommandHandler(orderService *service.OrderService, userService *ser
 	return &OrderCommandHandler{orderService: orderService, userService: userService, eventDao: eventDao, productRepo: productRepo}
 }
 
-func (h *OrderCommandHandler) HandleCommand(ctx context.Context, cmd command.Command) error {
-	switch cmd.Type() {
-	case command.OrderCreatedCommandName:
-		if c, ok := cmd.(*command.OrderCreatedCommand); ok {
-			return h.HandleOrderCreated(ctx, c)
-		}
-	case command.OrderConfirmedCommandName:
-		if c, ok := cmd.(*command.OrderConfirmedCommand); ok {
-			return h.HandleOrderConfirmed(ctx, c)
-		}
-	case command.OrderShippedCommandName:
-		if c, ok := cmd.(*command.OrderShippedCommand); ok {
-			return h.OrderShippedCommand(ctx, c)
-		}
-	case command.OrderCancelledCommandName:
-		if c, ok := cmd.(*command.OrderCancelledCommand); ok {
-			return h.OrderCancelledCommand(ctx, c)
-		}
-	case command.OrderRefundedCommandName:
-		if c, ok := cmd.(*command.OrderRefundedCommand); ok {
-			return h.OrderRefundedCommand(ctx, c)
-		}
-	default:
-		return errOrderCommand
-	}
-	return nil
-}
-
 // 驗證命令
 // 最終一致性儲存與發布命令
-func (h *OrderCommandHandler) HandleOrderCreated(ctx context.Context, cmd *command.OrderCreatedCommand) error {
-	user, err := h.userService.GetUser(ctx, cmd.UserID)
+func (h *OrderCommandHandler) HandleOrderCreated(ctx context.Context, cmd command.Command) error {
+	var c *command.OrderCreatedCommand
+	var ok bool
+	if c, ok = cmd.(*command.OrderCreatedCommand); !ok {
+		return errOrderCommand
+	}
+
+	user, err := h.userService.GetUser(ctx, c.UserID)
 	if err != nil {
 		return err
 	}
 
 	// 驗證商品是否存在
 	// 計算訂單總金額
-	amount, err := h.orderService.CalculateOrderAmount(cmd.Items...)
+	amount, err := h.orderService.CalculateOrderAmount(c.Items...)
 	if err != nil {
 		return err
 	}
@@ -87,7 +65,7 @@ func (h *OrderCommandHandler) HandleOrderCreated(ctx context.Context, cmd *comma
 		},
 		OrderID: orderID,
 		UserID:  user.UserID,
-		Items:   cmd.Items,
+		Items:   c.Items,
 		Amount:  amount,
 		State:   model.OrderStatusPending,
 	}
@@ -106,13 +84,19 @@ func (h *OrderCommandHandler) HandleOrderCreated(ctx context.Context, cmd *comma
 	return nil
 }
 
-func (h *OrderCommandHandler) HandleOrderConfirmed(ctx context.Context, cmd *command.OrderConfirmedCommand) error {
-	user, err := h.userService.GetUser(ctx, cmd.UserID)
+func (h *OrderCommandHandler) HandleOrderConfirmed(ctx context.Context, cmd command.Command) error {
+	var c *command.OrderConfirmedCommand
+	var ok bool
+	if c, ok = cmd.(*command.OrderConfirmedCommand); !ok {
+		return errOrderCommand
+	}
+
+	user, err := h.userService.GetUser(ctx, c.UserID)
 	if err != nil {
 		return err
 	}
 
-	order, err := h.orderService.GetOrder(ctx, cmd.OrderID)
+	order, err := h.orderService.GetOrder(ctx, c.OrderID)
 	if err != nil {
 		return err
 	}
@@ -138,13 +122,19 @@ func (h *OrderCommandHandler) HandleOrderConfirmed(ctx context.Context, cmd *com
 	return nil
 }
 
-func (h *OrderCommandHandler) OrderShippedCommand(ctx context.Context, cmd *command.OrderShippedCommand) error {
-	user, err := h.userService.GetUser(ctx, cmd.UserID)
+func (h *OrderCommandHandler) OrderShippedCommand(ctx context.Context, cmd command.Command) error {
+	var c *command.OrderShippedCommand
+	var ok bool
+	if c, ok = cmd.(*command.OrderShippedCommand); !ok {
+		return errOrderCommand
+	}
+
+	user, err := h.userService.GetUser(ctx, c.UserID)
 	if err != nil {
 		return err
 	}
 
-	order, err := h.orderService.GetOrder(ctx, cmd.OrderID)
+	order, err := h.orderService.GetOrder(ctx, c.OrderID)
 	if err != nil {
 		return err
 	}
@@ -162,8 +152,8 @@ func (h *OrderCommandHandler) OrderShippedCommand(ctx context.Context, cmd *comm
 		},
 		OrderID:      order.OrderID,
 		UserID:       user.UserID,
-		TrackingCode: cmd.TrackingCode,
-		Carrier:      cmd.Carrier,
+		TrackingCode: c.TrackingCode,
+		Carrier:      c.Carrier,
 		State:        model.OrderStatusShipped,
 	}
 
@@ -176,13 +166,19 @@ func (h *OrderCommandHandler) OrderShippedCommand(ctx context.Context, cmd *comm
 	return nil
 }
 
-func (h *OrderCommandHandler) OrderCancelledCommand(ctx context.Context, cmd *command.OrderCancelledCommand) error {
-	user, err := h.userService.GetUser(ctx, cmd.UserID)
+func (h *OrderCommandHandler) OrderCancelledCommand(ctx context.Context, cmd command.Command) error {
+	var c *command.OrderCancelledCommand
+	var ok bool
+	if c, ok = cmd.(*command.OrderCancelledCommand); !ok {
+		return errOrderCommand
+	}
+
+	user, err := h.userService.GetUser(ctx, c.UserID)
 	if err != nil {
 		return err
 	}
 
-	order, err := h.orderService.GetOrder(ctx, cmd.OrderID)
+	order, err := h.orderService.GetOrder(ctx, c.OrderID)
 	if err != nil {
 		return err
 	}
@@ -203,7 +199,7 @@ func (h *OrderCommandHandler) OrderCancelledCommand(ctx context.Context, cmd *co
 		Items:   orderItems,
 		OrderID: order.OrderID,
 		UserID:  user.UserID,
-		Message: cmd.Message,
+		Message: c.Message,
 		State:   model.OrderStatusCancelled,
 	}
 
@@ -216,13 +212,19 @@ func (h *OrderCommandHandler) OrderCancelledCommand(ctx context.Context, cmd *co
 	return nil
 }
 
-func (h *OrderCommandHandler) OrderRefundedCommand(ctx context.Context, cmd *command.OrderRefundedCommand) error {
-	user, err := h.userService.GetUser(ctx, cmd.UserID)
+func (h *OrderCommandHandler) OrderRefundedCommand(ctx context.Context, cmd command.Command) error {
+	var c *command.OrderRefundedCommand
+	var ok bool
+	if c, ok = cmd.(*command.OrderRefundedCommand); !ok {
+		return errOrderCommand
+	}
+
+	user, err := h.userService.GetUser(ctx, c.UserID)
 	if err != nil {
 		return err
 	}
 
-	order, err := h.orderService.GetOrder(ctx, cmd.OrderID)
+	order, err := h.orderService.GetOrder(ctx, c.OrderID)
 	if err != nil {
 		return err
 	}

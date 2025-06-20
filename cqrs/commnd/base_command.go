@@ -1,8 +1,13 @@
 package command
 
 type BaseCommand struct {
-	CommandID string `json:"command_id"`
+	commandID string
 }
+
+func (c *BaseCommand) GetID() string {
+	return c.commandID
+}
+
 type CommandType string
 
 const (
@@ -15,4 +20,5 @@ const (
 
 type Command interface {
 	Type() CommandType
+	GetID() string
 }
