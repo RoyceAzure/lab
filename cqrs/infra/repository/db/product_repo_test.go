@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -95,7 +96,7 @@ func (suite *ProductRepoTestSuite) TestGetProductByID() {
 	}
 	suite.productRepo.CreateProduct(product)
 
-	foundProduct, err := suite.productRepo.GetProductByID(product.ProductID)
+	foundProduct, err := suite.productRepo.GetProductByID(context.Background(), product.ProductID)
 
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), product.Name, foundProduct.Name)
@@ -169,7 +170,7 @@ func (suite *ProductRepoTestSuite) TestUpdateProduct() {
 	require.NoError(suite.T(), err)
 
 	// 驗證更新
-	updatedProduct, _ := suite.productRepo.GetProductByID(product.ProductID)
+	updatedProduct, _ := suite.productRepo.GetProductByID(context.Background(), product.ProductID)
 	require.Equal(suite.T(), "Updated Product", updatedProduct.Name)
 	require.True(suite.T(), decimal.NewFromFloat(150.0).Equal(updatedProduct.Price))
 }
@@ -194,7 +195,7 @@ func (suite *ProductRepoTestSuite) TestUpdateProductFields() {
 	require.NoError(suite.T(), err)
 
 	// 驗證更新
-	updatedProduct, _ := suite.productRepo.GetProductByID(product.ProductID)
+	updatedProduct, _ := suite.productRepo.GetProductByID(context.Background(), product.ProductID)
 	require.Equal(suite.T(), "Updated Product", updatedProduct.Name)
 	require.True(suite.T(), decimal.NewFromFloat(150.0).Equal(updatedProduct.Price))
 }
@@ -214,7 +215,7 @@ func (suite *ProductRepoTestSuite) TestDeleteProduct() {
 	require.NoError(suite.T(), err)
 
 	// 驗證軟刪除
-	foundProduct, err := suite.productRepo.GetProductByID(product.ProductID)
+	foundProduct, err := suite.productRepo.GetProductByID(context.Background(), product.ProductID)
 	require.Error(suite.T(), err)
 	require.Nil(suite.T(), foundProduct)
 }
@@ -234,7 +235,7 @@ func (suite *ProductRepoTestSuite) TestHardDeleteProduct() {
 	require.NoError(suite.T(), err)
 
 	// 驗證硬刪除
-	foundProduct, err := suite.productRepo.GetProductByID(product.ProductID)
+	foundProduct, err := suite.productRepo.GetProductByID(context.Background(), product.ProductID)
 	require.Error(suite.T(), err)
 	require.Nil(suite.T(), foundProduct)
 }
