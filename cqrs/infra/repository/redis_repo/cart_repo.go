@@ -17,12 +17,6 @@ func NewCartRepo(cartCache *redis.Client) *CartRepo {
 	return &CartRepo{CartCache: cartCache}
 }
 
-// 創建購物車
-// 購物車要使用MHSET
-// 購物車更新 orderItems 要能支援delta增減
-// 若orderItems 數量為0，則刪除該商品
-// Create 創建新的購物車並儲存到 Redis
-
 func generateCartItemKey(userID int) string {
 	return fmt.Sprintf("cart:%d:items", userID)
 }
@@ -138,6 +132,21 @@ func (r *CartRepo) Delete(ctx context.Context, userID int, productID string) err
 	}
 	if err != nil {
 		return fmt.Errorf("failed to delete item from cart: %w", err)
+	}
+	return nil
+}
+
+// Clear 清空購物車
+func (r *CartRepo) Clear(ctx context.Context, userID int) error {
+	itemsKey := generateCartItemKey(userID)
+
+	// 刪除整個購物車商品 Hash
+	err := r.CartCache.Del(ctx, itemsKey).Err()
+	if err == redis.Nil {
+		return fmt.Errorf("cart %d not found", userID)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to clear cart: %w", err)
 	}
 	return nil
 }

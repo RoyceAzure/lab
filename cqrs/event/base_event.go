@@ -12,15 +12,14 @@ type BaseEvent struct {
 type EventType string
 
 const (
-	OrderCreatedEventName      EventType = "OrderCreated"
-	OrderConfirmedEventName    EventType = "OrderConfirmed"
-	OrderShippedEventName      EventType = "OrderShipped"
-	OrderCancelledEventName    EventType = "OrderCancelled"
-	OrderRefundedEventName     EventType = "OrderRefunded"
-	CartCreatedEventName       EventType = "CartCreated"
-	CartCreatedFailedEventName EventType = "CartCreatedFailed"
-	CartUpdatedEventName       EventType = "CartUpdated"
-	CartUpdatedFailedEventName EventType = "CartUpdatedFailed"
+	OrderCreatedEventName   EventType = "OrderCreated"
+	OrderConfirmedEventName EventType = "OrderConfirmed"
+	OrderShippedEventName   EventType = "OrderShipped"
+	OrderCancelledEventName EventType = "OrderCancelled"
+	OrderRefundedEventName  EventType = "OrderRefunded"
+	CartCreatedEventName    EventType = "CartCreated"
+	CartFailedEventName     EventType = "CartActionFailed"
+	CartUpdatedEventName    EventType = "CartUpdated"
 )
 
 type Event interface {

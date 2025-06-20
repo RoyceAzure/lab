@@ -94,3 +94,26 @@ func (suite *CartRepoTestSuite) TestAddAndDeleteItem() {
 	assert.Len(suite.T(), got.OrderItems, 1)
 	assert.Equal(suite.T(), "p5", got.OrderItems[0].ProductID)
 }
+
+func (suite *CartRepoTestSuite) TestClearCart() {
+	ctx := context.Background()
+	cart := &model.Cart{
+		UserID: 3,
+		OrderItems: []model.CartItem{
+			{ProductID: "p1", Quantity: 2},
+			{ProductID: "p2", Quantity: 3},
+		},
+	}
+	err := suite.cartRepo.Create(ctx, cart)
+	assert.NoError(suite.T(), err)
+
+	// 清空購物車
+	err = suite.cartRepo.Clear(ctx, 3)
+	assert.NoError(suite.T(), err)
+
+	// 取得購物車，應該沒有商品但 userID 還在
+	got, err := suite.cartRepo.Get(ctx, 3)
+	assert.NoError(suite.T(), err)
+	assert.Equal(suite.T(), cart.UserID, got.UserID)
+	assert.Len(suite.T(), got.OrderItems, 0)
+}

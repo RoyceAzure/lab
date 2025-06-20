@@ -20,8 +20,7 @@ import (
 type CartCommandError error
 
 var (
-	errCartCommand           CartCommandError = errors.New("cart_command_format_error")
-	errProductStockNotEnough CartCommandError = errors.New("product_stock_not_enough")
+	errCartCommand CartCommandError = errors.New("cart_command_format_error")
 )
 
 // 購物車事件
@@ -86,7 +85,7 @@ func (h *CartCommandHandler) HandleCartCreated(ctx context.Context, cmd command.
 // 事件發布
 // TODO :若是有任何失敗，需要紀錄並後續處理
 func (h *CartCommandHandler) produceCartEvent(ctx context.Context, userID int, orderItems []model.OrderItemData) {
-	msg, err := prepareCartEventMessage(ctx, userID, orderItems)
+	msg, err := prepareCartEventMessage(userID, orderItems)
 	if err != nil {
 		return
 	}
@@ -104,7 +103,7 @@ func (h *CartCommandHandler) produceCartFailedEvent(ctx context.Context, userID 
 		return
 	}
 
-	msg, err := prepareCartFailedEventMessage(ctx, userID, errs...)
+	msg, err := prepareCartFailedEventMessage(userID, errs...)
 	if err != nil {
 		return
 	}
@@ -115,13 +114,13 @@ func (h *CartCommandHandler) produceCartFailedEvent(ctx context.Context, userID 
 	}
 }
 
-func prepareCartEventMessage(ctx context.Context, userID int, orderItems []model.OrderItemData) (message.Message, error) {
+func prepareCartEventMessage(userID int, orderItems []model.OrderItemData) (message.Message, error) {
 	eventID := uuid.New().String()
 	eventBytes, err := json.Marshal(event.CartCreatedEvent{
 		BaseEvent: event.BaseEvent{
 			EventID:     eventID,
 			AggregateID: generateCartAggregateID(userID),
-			EventType:   event.CartCreatedFailedEventName,
+			EventType:   event.CartCreatedEventName,
 		},
 		UserID: userID,
 		Items:  orderItems,
@@ -133,13 +132,13 @@ func prepareCartEventMessage(ctx context.Context, userID int, orderItems []model
 	}, err
 }
 
-func prepareCartFailedEventMessage(ctx context.Context, userID int, errs ...error) (message.Message, error) {
+func prepareCartFailedEventMessage(userID int, errs ...error) (message.Message, error) {
 	eventID := uuid.New().String()
-	eventBytes, err := json.Marshal(event.CartCreatedFailedEvent{
+	eventBytes, err := json.Marshal(event.CartCommandFailedEvent{
 		BaseEvent: event.BaseEvent{
 			EventID:     eventID,
 			AggregateID: generateCartAggregateID(userID),
-			EventType:   event.CartCreatedFailedEventName,
+			EventType:   event.CartFailedEventName,
 		},
 		Message: errors.Join(errs...).Error(),
 	})
@@ -202,7 +201,7 @@ func (h *CartCommandHandler) HandleCartUpdated(ctx context.Context, cmd command.
 // 發送狀態變更事件
 // TODO :若是有任何失敗，需要紀錄並後續處理
 func (h *CartCommandHandler) produceCartUpdatedEvent(ctx context.Context, userID int, details []command.CartUpdatedDetial) {
-	msg, err := prepareCartUpdatedEventMessage(ctx, userID, details)
+	msg, err := prepareCartUpdatedEventMessage(userID, details)
 	if err != nil {
 		return
 	}
@@ -213,7 +212,7 @@ func (h *CartCommandHandler) produceCartUpdatedEvent(ctx context.Context, userID
 	}
 }
 
-func prepareCartUpdatedEventMessage(ctx context.Context, userID int, details []command.CartUpdatedDetial) (message.Message, error) {
+func prepareCartUpdatedEventMessage(userID int, details []command.CartUpdatedDetial) (message.Message, error) {
 	eventID := uuid.New().String()
 	eventBytes, err := json.Marshal(event.CartUpdatedEvent{
 		BaseEvent: event.BaseEvent{
