@@ -49,7 +49,7 @@ func (h *OrderCommandHandler) HandleOrderCreated(ctx context.Context, cmd comman
 
 	// 驗證商品是否存在
 	// 計算訂單總金額
-	amount, err := h.orderService.CalculateOrderAmount(c.Items...)
+	amount, err := h.orderService.CalculateOrderAmount(ctx, c.Items...)
 	if err != nil {
 		return err
 	}
@@ -184,7 +184,7 @@ func (h *OrderCommandHandler) OrderCancelledCommand(ctx context.Context, cmd com
 	}
 
 	eventID := uuid.New().String()
-	orderItems, err := h.orderService.TransferOrderItemToOrderItemData(order.OrderItems...)
+	orderItems, err := h.orderService.TransferOrderItemToOrderItemData(ctx, order.OrderItems...)
 	if err != nil {
 		return err
 	}
@@ -229,7 +229,7 @@ func (h *OrderCommandHandler) OrderRefundedCommand(ctx context.Context, cmd comm
 		return err
 	}
 
-	amount, err := h.orderService.CalculateOrderAmountFromEntity(order.OrderItems...)
+	amount, err := h.orderService.CalculateOrderAmountFromEntity(ctx, order.OrderItems...)
 	if err != nil {
 		return err
 	}

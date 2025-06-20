@@ -6,7 +6,7 @@ import (
 
 type OrderCreatedCommand struct {
 	BaseCommand
-	UserID uint                  `json:"user_id"`
+	UserID int                   `json:"user_id"`
 	Items  []model.OrderItemData `json:"items"`
 }
 
@@ -17,7 +17,7 @@ func (c *OrderCreatedCommand) Type() CommandType {
 type OrderConfirmedCommand struct {
 	BaseCommand
 	OrderID string `json:"order_id"`
-	UserID  uint   `json:"user_id"`
+	UserID  int    `json:"user_id"`
 }
 
 func (c *OrderConfirmedCommand) Type() CommandType {
@@ -27,7 +27,7 @@ func (c *OrderConfirmedCommand) Type() CommandType {
 type OrderShippedCommand struct {
 	BaseCommand
 	OrderID      string `json:"order_id"`
-	UserID       uint   `json:"user_id"`
+	UserID       int    `json:"user_id"`
 	TrackingCode string `json:"tracking_code"` // 物流追蹤號
 	Carrier      string `json:"carrier"`       // 物流商
 }
@@ -39,7 +39,7 @@ func (c *OrderShippedCommand) Type() CommandType {
 type OrderCancelledCommand struct {
 	BaseCommand
 	OrderID string `json:"order_id"`
-	UserID  uint   `json:"user_id"`
+	UserID  int    `json:"user_id"`
 	Message string `json:"message"`
 }
 
@@ -50,7 +50,7 @@ func (c *OrderCancelledCommand) Type() CommandType {
 type OrderRefundedCommand struct {
 	BaseCommand
 	OrderID string `json:"order_id"`
-	UserID  uint   `json:"user_id"`
+	UserID  int    `json:"user_id"`
 }
 
 func (c *OrderRefundedCommand) Type() CommandType {

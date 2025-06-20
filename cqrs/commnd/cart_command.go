@@ -10,7 +10,7 @@ const (
 
 type CartCreatedCommand struct {
 	BaseCommand
-	UserID uint             `json:"user_id"`
+	UserID int              `json:"user_id"`
 	Items  []model.CartItem `json:"items"`
 }
 
@@ -21,7 +21,7 @@ func (c *CartCreatedCommand) Type() CommandType {
 // 直接替換購物車Items狀態
 type CartUpdatedCommand struct {
 	BaseCommand
-	UserID uint             `json:"user_id"`
+	UserID int              `json:"user_id"`
 	Items  []model.CartItem `json:"items"`
 }
 
@@ -32,7 +32,7 @@ func (c *CartUpdatedCommand) Type() CommandType {
 //刪除整個購物車
 type CartDeletedCommand struct {
 	BaseCommand
-	UserID uint `json:"user_id"`
+	UserID int `json:"user_id"`
 }
 
 func (c *CartDeletedCommand) Type() CommandType {
