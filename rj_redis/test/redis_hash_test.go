@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/RoyceAzure/lab/rj_redis/pkg/cache"
-	redis_cache "github.com/RoyceAzure/lab/rj_redis/pkg/cache/redis"
 	"github.com/RoyceAzure/lab/rj_redis/pkg/redis_client"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
@@ -106,7 +105,7 @@ type RedisHashTestSuite struct {
 func (s *RedisHashTestSuite) SetupSuite() {
 	redisClient, err := redis_client.GetRedisClient(testRedisAddr, redis_client.WithPassword(testRedisPassword))
 	require.NoError(s.T(), err)
-	s.cache = redis_cache.NewRedisCache(redisClient, "test_hash")
+	s.cache = cache.NewRedisCache(redisClient, "test_hash")
 	s.ctx = context.Background()
 }
 

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/RoyceAzure/lab/rj_redis/pkg/cache"
-	redis_cache "github.com/RoyceAzure/lab/rj_redis/pkg/cache/redis" // renamed import
 	"github.com/RoyceAzure/lab/rj_redis/pkg/redis_client"
 	"github.com/redis/go-redis/v9" // for redis.Nil
 	"github.com/stretchr/testify/require"
@@ -30,7 +29,7 @@ func newTestCache(t *testing.T) cache.Cache {
 	// though t.Cleanup per test function is more granular.
 	// For a truly clean slate for each Test function, you might flush or clean keys by pattern here.
 
-	return redis_cache.NewRedisCache(redisClient, testPrefix)
+	return cache.NewRedisCache(redisClient, testPrefix)
 }
 
 func TestRedisCache_Ping(t *testing.T) {
