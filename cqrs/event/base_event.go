@@ -20,6 +20,7 @@ const (
 	CartCreatedEventName    EventType = "CartCreated"
 	CartFailedEventName     EventType = "CartActionFailed"
 	CartUpdatedEventName    EventType = "CartUpdated"
+	CartDeletedEventName    EventType = "CartDeleted"
 )
 
 type Event interface {

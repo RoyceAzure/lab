@@ -10,7 +10,6 @@ import (
 	"github.com/RoyceAzure/lab/cqrs/command"
 	"github.com/RoyceAzure/lab/cqrs/event"
 	"github.com/RoyceAzure/lab/cqrs/infra/repository/db/model"
-	"github.com/RoyceAzure/lab/cqrs/infra/repository/eventdb"
 	"github.com/RoyceAzure/lab/cqrs/service"
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/message"
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/producer"
@@ -28,14 +27,12 @@ var (
 // key: userID 一個userID只會有一個購物車
 type CartCommandHandler struct {
 	userService    *service.UserService
-	eventDao       *eventdb.EventDao
 	productService *service.ProductService
-	orderService   *service.OrderService
 	kafkaProducer  producer.Producer
 }
 
-func NewCartCommandHandler(userService *service.UserService, eventDao *eventdb.EventDao, productService *service.ProductService, orderService *service.OrderService, kafkaProducer producer.Producer) *CartCommandHandler {
-	return &CartCommandHandler{userService: userService, eventDao: eventDao, productService: productService, orderService: orderService, kafkaProducer: kafkaProducer}
+func NewCartCommandHandler(userService *service.UserService, productService *service.ProductService, kafkaProducer producer.Producer) *CartCommandHandler {
+	return &CartCommandHandler{userService: userService, productService: productService, kafkaProducer: kafkaProducer}
 }
 
 // 驗證命令
@@ -224,6 +221,55 @@ func prepareCartUpdatedEventMessage(userID int, details []command.CartUpdatedDet
 		Details: details,
 	})
 
+	return message.Message{
+		Key:   []byte(strconv.Itoa(userID)),
+		Topic: "cart",
+		Value: eventBytes,
+	}, err
+}
+
+// 購物車確認-> 進入訂單狀態後 會刪除購物車
+// 或者購物車直接刪除
+func (h *CartCommandHandler) HandleCartDeleted(ctx context.Context, cmd command.Command) error {
+	var c *command.CartDeletedCommand
+	var ok bool
+	if c, ok = cmd.(*command.CartDeletedCommand); !ok {
+		return errCartCommand
+	}
+
+	user, err := h.userService.GetUser(ctx, c.UserID)
+	if err != nil {
+		return err
+	}
+
+	//次要事件發布，有錯誤會記錄，交由後續程序處理
+	go h.produceCartDeletedEvent(ctx, user.UserID)
+
+	return nil
+}
+
+func (h *CartCommandHandler) produceCartDeletedEvent(ctx context.Context, userID int) {
+	msg, err := prepareCartDeletedEventMessage(userID)
+	if err != nil {
+		return
+	}
+
+	err = h.kafkaProducer.Produce(ctx, []message.Message{msg})
+	if err != nil {
+		return
+	}
+}
+
+func prepareCartDeletedEventMessage(userID int) (message.Message, error) {
+	eventID := uuid.New().String()
+	eventBytes, err := json.Marshal(event.CartDeletedEvent{
+		BaseEvent: event.BaseEvent{
+			EventID:     eventID,
+			AggregateID: generateCartAggregateID(userID),
+			EventType:   event.CartDeletedEventName,
+		},
+		UserID: userID,
+	})
 	return message.Message{
 		Key:   []byte(strconv.Itoa(userID)),
 		Topic: "cart",

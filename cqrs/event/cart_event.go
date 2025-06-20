@@ -30,3 +30,12 @@ func (e *CartCommandFailedEvent) Type() EventType {
 func (e *CartCreatedEvent) Type() EventType {
 	return CartCreatedEventName
 }
+
+type CartDeletedEvent struct {
+	BaseEvent
+	UserID int
+}
+
+func (e *CartDeletedEvent) Type() EventType {
+	return CartDeletedEventName
+}
