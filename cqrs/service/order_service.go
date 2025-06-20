@@ -28,11 +28,11 @@ func NewOrderService(orderRepo *db.OrderRepo, productRepo *db.ProductRepo) *Orde
 }
 
 // 檢查商品預留數量是否足夠，於創建Order時使用
-func (o *OrderService) IsProductReservedEnough(productID string, quantity int) error {
+func (o *OrderService) IsProductReservedEnough(ctx context.Context, productID string, quantity int) error {
 	// 檢查商品預留數量是否足夠
 	// 檢查redis 該購物車是否有商品
 	// 取出購物車商品數量
-	product, err := o.productRepo.GetProductByID(productID)
+	product, err := o.productRepo.GetProductByID(ctx, productID)
 	if err != nil {
 		return err
 	}
@@ -43,10 +43,10 @@ func (o *OrderService) IsProductReservedEnough(productID string, quantity int) e
 	return nil
 }
 
-func (o *OrderService) CalculateOrderAmount(orderItems ...model.OrderItemData) (decimal.Decimal, error) {
+func (o *OrderService) CalculateOrderAmount(ctx context.Context, orderItems ...model.OrderItemData) (decimal.Decimal, error) {
 	amount := decimal.NewFromInt(0)
 	for _, orderItem := range orderItems {
-		product, err := o.productRepo.GetProductByID(orderItem.ProductID)
+		product, err := o.productRepo.GetProductByID(ctx, orderItem.ProductID)
 		if err != nil {
 			return decimal.Decimal{}, err
 		}
@@ -70,10 +70,10 @@ func TransferOrderItemDataToOrderItem(orderItemsDatas ...model.OrderItemData) ([
 	return orderItems, nil
 }
 
-func (o *OrderService) TransferOrderItemToOrderItemData(orderItems ...model.OrderItem) ([]model.OrderItemData, error) {
+func (o *OrderService) TransferOrderItemToOrderItemData(ctx context.Context, orderItems ...model.OrderItem) ([]model.OrderItemData, error) {
 	orderItemsData := []model.OrderItemData{}
 	for _, orderItem := range orderItems {
-		product, err := o.productRepo.GetProductByID(orderItem.ProductID)
+		product, err := o.productRepo.GetProductByID(ctx, orderItem.ProductID)
 		if err != nil {
 			return nil, err
 		}
@@ -92,20 +92,20 @@ func (o *OrderService) TransferOrderItemToOrderItemData(orderItems ...model.Orde
 	return orderItemsData, nil
 }
 
-func (o *OrderService) CalculateOrderAmountFromEntity(orderItems ...model.OrderItem) (decimal.Decimal, error) {
-	orderItemsData, err := o.TransferOrderItemToOrderItemData(orderItems...)
+func (o *OrderService) CalculateOrderAmountFromEntity(ctx context.Context, orderItems ...model.OrderItem) (decimal.Decimal, error) {
+	orderItemsData, err := o.TransferOrderItemToOrderItemData(ctx, orderItems...)
 	if err != nil {
 		return decimal.Decimal{}, err
 	}
-	return o.CalculateOrderAmount(orderItemsData...)
+	return o.CalculateOrderAmount(ctx, orderItemsData...)
 }
 
 // 當修改購屋車商品數量時，檢查商品預留數量是否足夠
-func (o *OrderService) IsProductStockEnoughForUpdate(orderID string, productID string, quantity int) error {
+func (o *OrderService) IsProductStockEnoughForUpdate(ctx context.Context, orderID string, productID string, quantity int) error {
 
 	bais := 10 // 假設原本購屋車A商品數量為10
 
-	product, err := o.productRepo.GetProductByID(productID)
+	product, err := o.productRepo.GetProductByID(ctx, productID)
 	if err != nil {
 		return err
 	}
@@ -116,10 +116,10 @@ func (o *OrderService) IsProductStockEnoughForUpdate(orderID string, productID s
 	return nil
 }
 
-func (o *OrderService) CalculateCartAmount(cartItems ...model.CartItem) (decimal.Decimal, error) {
+func (o *OrderService) CalculateCartAmount(ctx context.Context, cartItems ...model.CartItem) (decimal.Decimal, error) {
 	amount := decimal.NewFromInt(0)
 	for _, cartItem := range cartItems {
-		product, err := o.productRepo.GetProductByID(cartItem.ProductID)
+		product, err := o.productRepo.GetProductByID(ctx, cartItem.ProductID)
 		if err != nil {
 			return decimal.Decimal{}, err
 		}
@@ -169,7 +169,7 @@ func (o *OrderService) CreateCacheCart(ctx context.Context, userID uint, cartIte
 	// 	return uuid.UUID{}, err
 	// }
 
-	amount, err := o.CalculateCartAmount(cartItems...)
+	amount, err := o.CalculateCartAmount(ctx, cartItems...)
 	if err != nil {
 		return uuid.UUID{}, err
 	}
@@ -209,7 +209,7 @@ func (o *OrderService) UpdateCacheCart(ctx context.Context, userID uint, cartIte
 	// if err != nil {
 	// 	return uuid.UUID{}, err
 	// }
-	amount, err := o.CalculateCartAmount(cartItems...)
+	amount, err := o.CalculateCartAmount(ctx, cartItems...)
 	if err != nil {
 		return nil, err
 	}

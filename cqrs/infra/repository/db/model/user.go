@@ -1,7 +1,7 @@
 package model
 
 type User struct {
-	UserID      uint    `gorm:"primaryKey"`
+	UserID      int     `gorm:"primaryKey"`
 	UserName    string  `gorm:"not null;type:varchar(50)"`
 	UserEmail   string  `gorm:"unique;not null;type:varchar(50)"`
 	UserPhone   string  `gorm:"unique;not null;type:varchar(50)"`
