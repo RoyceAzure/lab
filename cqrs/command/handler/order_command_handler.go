@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	command "github.com/RoyceAzure/lab/cqrs/commnd"
+	"github.com/RoyceAzure/lab/cqrs/command"
 	"github.com/RoyceAzure/lab/cqrs/event"
 	"github.com/RoyceAzure/lab/cqrs/infra/repository/db"
 	"github.com/RoyceAzure/lab/cqrs/infra/repository/db/model"

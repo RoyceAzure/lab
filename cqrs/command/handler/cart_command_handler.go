@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strconv"
 
-	command "github.com/RoyceAzure/lab/cqrs/commnd"
+	"github.com/RoyceAzure/lab/cqrs/command"
 	"github.com/RoyceAzure/lab/cqrs/event"
 	"github.com/RoyceAzure/lab/cqrs/infra/repository/db/model"
 	"github.com/RoyceAzure/lab/cqrs/infra/repository/eventdb"
@@ -15,13 +15,12 @@ import (
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/message"
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/producer"
 	"github.com/google/uuid"
-	"github.com/shopspring/decimal"
 )
 
 type CartCommandError error
 
 var (
-	errCartCommand           CartCommandError = errors.New("cart_command_error")
+	errCartCommand           CartCommandError = errors.New("cart_command_format_error")
 	errProductStockNotEnough CartCommandError = errors.New("product_stock_not_enough")
 )
 
@@ -87,12 +86,7 @@ func (h *CartCommandHandler) HandleCartCreated(ctx context.Context, cmd command.
 // 事件發布
 // TODO :若是有任何失敗，需要紀錄並後續處理
 func (h *CartCommandHandler) produceCartEvent(ctx context.Context, userID int, orderItems []model.OrderItemData) {
-	amount, err := h.orderService.CalculateOrderAmount(ctx, orderItems...)
-	if err != nil {
-		return
-	}
-
-	msg, err := prepareCartEventMessage(ctx, userID, orderItems, amount)
+	msg, err := prepareCartEventMessage(ctx, userID, orderItems)
 	if err != nil {
 		return
 	}
@@ -121,7 +115,7 @@ func (h *CartCommandHandler) produceCartFailedEvent(ctx context.Context, userID 
 	}
 }
 
-func prepareCartEventMessage(ctx context.Context, userID int, orderItems []model.OrderItemData, amount decimal.Decimal) (message.Message, error) {
+func prepareCartEventMessage(ctx context.Context, userID int, orderItems []model.OrderItemData) (message.Message, error) {
 	eventID := uuid.New().String()
 	eventBytes, err := json.Marshal(event.CartCreatedEvent{
 		BaseEvent: event.BaseEvent{
@@ -131,7 +125,6 @@ func prepareCartEventMessage(ctx context.Context, userID int, orderItems []model
 		},
 		UserID: userID,
 		Items:  orderItems,
-		Amount: amount,
 	})
 	return message.Message{
 		Key:   []byte(strconv.Itoa(userID)),
@@ -174,31 +167,69 @@ func (h *CartCommandHandler) HandleCartUpdated(ctx context.Context, cmd command.
 	}
 
 	var (
-		orderItems    []model.OrderItemData
 		errsOrderItem []error
 	)
 
-	//主要庫存處理事件
-	//庫存個別檢查，個別扣除，避免一個商品庫存不足，導致整個購物車失敗
-	for _, item := range c.Items {
-		// 扣庫存
-		err = h.productService.SubProductStock(ctx, item.ProductID, uint(item.Quantity))
-		if err != nil {
-			errsOrderItem = append(errsOrderItem, err)
-			continue
+	//主要庫存處理事件，同步處理庫存
+	//庫存個別檢查，個別處理，避免一個商品庫存不足，導致整個購物車失敗
+	for _, item := range c.Details {
+		switch item.Action {
+		case command.CartUpdatedActionAdd:
+			// 扣庫存
+			err = h.productService.SubProductStock(ctx, item.ProductID, uint(item.Quantity))
+			if err != nil {
+				errsOrderItem = append(errsOrderItem, err)
+				continue
+			}
+		case command.CartUpdatedActionSub:
+			// 加庫存
+			err = h.productService.AddProductStock(ctx, item.ProductID, uint(item.Quantity))
+			if err != nil {
+				errsOrderItem = append(errsOrderItem, err)
+				continue
+			}
 		}
-
-		orderItems = append(orderItems, model.OrderItemData{
-			ProductID: item.ProductID,
-			Quantity:  item.Quantity,
-		})
 	}
 
 	//次要事件發布，有錯誤會記錄，交由後續程序處理
-	go h.produceCartEvent(ctx, user.UserID, orderItems)
+	go h.produceCartUpdatedEvent(ctx, user.UserID, c.Details)
 	go h.produceCartFailedEvent(ctx, user.UserID, errsOrderItem...)
 
 	return nil
+}
+
+// 更新購物車事件發布
+// 發送狀態變更事件
+// TODO :若是有任何失敗，需要紀錄並後續處理
+func (h *CartCommandHandler) produceCartUpdatedEvent(ctx context.Context, userID int, details []command.CartUpdatedDetial) {
+	msg, err := prepareCartUpdatedEventMessage(ctx, userID, details)
+	if err != nil {
+		return
+	}
+
+	err = h.kafkaProducer.Produce(ctx, []message.Message{msg})
+	if err != nil {
+		return
+	}
+}
+
+func prepareCartUpdatedEventMessage(ctx context.Context, userID int, details []command.CartUpdatedDetial) (message.Message, error) {
+	eventID := uuid.New().String()
+	eventBytes, err := json.Marshal(event.CartUpdatedEvent{
+		BaseEvent: event.BaseEvent{
+			EventID:     eventID,
+			AggregateID: generateCartAggregateID(userID),
+			EventType:   event.CartUpdatedEventName,
+		},
+		UserID:  userID,
+		Details: details,
+	})
+
+	return message.Message{
+		Key:   []byte(strconv.Itoa(userID)),
+		Topic: "cart",
+		Value: eventBytes,
+	}, err
 }
 
 func generateCartAggregateID(userID int) string {

@@ -18,11 +18,23 @@ func (c *CartCreatedCommand) Type() CommandType {
 	return CartCreatedCommandName
 }
 
-// 直接替換購物車Items狀態
 type CartUpdatedCommand struct {
 	BaseCommand
-	UserID int              `json:"user_id"`
-	Items  []model.CartItem `json:"items"`
+	UserID  int                 `json:"user_id"`
+	Details []CartUpdatedDetial `json:"details"`
+}
+
+type CartUpdatedAction int
+
+const (
+	CartUpdatedActionAdd CartUpdatedAction = iota
+	CartUpdatedActionSub
+)
+
+type CartUpdatedDetial struct {
+	Action    CartUpdatedAction `json:"action"`
+	ProductID string            `json:"product_id"`
+	Quantity  int               `json:"quantity"`
 }
 
 func (c *CartUpdatedCommand) Type() CommandType {
