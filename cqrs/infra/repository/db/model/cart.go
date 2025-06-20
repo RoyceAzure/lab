@@ -1,15 +1,12 @@
 package model
 
 import (
-	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
 type Cart struct {
-	CartID     uuid.UUID       `json:"cart_id"`
-	UserID     int             `json:"user_id"` // 外鍵，關聯到 User
-	OrderItems []CartItem      `json:"order_items"`
-	Amount     decimal.Decimal `json:"amount"`
+	UserID     int        `json:"user_id"` // 外鍵，關聯到 User
+	OrderItems []CartItem `json:"order_items"`
 }
 
 type CartItem struct {
