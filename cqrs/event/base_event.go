@@ -9,6 +9,10 @@ type BaseEvent struct {
 	EventType   EventType `json:"event_type"`
 }
 
+func (e *BaseEvent) GetID() string {
+	return e.EventID
+}
+
 type EventType string
 
 const (
@@ -25,4 +29,5 @@ const (
 
 type Event interface {
 	Type() EventType
+	GetID() string
 }
