@@ -131,7 +131,7 @@ func prepareCartEventMessage(userID int, orderItems []model.OrderItemData) (mess
 
 func prepareCartFailedEventMessage(userID int, errs ...error) (message.Message, error) {
 	eventID := uuid.New().String()
-	eventBytes, err := json.Marshal(event.CartCommandFailedEvent{
+	eventBytes, err := json.Marshal(event.CartFailedEvent{
 		BaseEvent: event.BaseEvent{
 			EventID:     eventID,
 			AggregateID: generateCartAggregateID(userID),

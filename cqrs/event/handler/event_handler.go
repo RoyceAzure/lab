@@ -12,7 +12,8 @@ import (
 type HandlerError error
 
 var (
-	errHandlerNotFound HandlerError = errors.New("handler not found")
+	errHandlerNotFound    HandlerError = errors.New("handler not found")
+	errUnknownEventFormat HandlerError = errors.New("unknown event format")
 )
 
 type HandlerFunc func(ctx context.Context, evt event.Event) error
@@ -48,7 +49,7 @@ func (d *HandlerDispatcher) HandleEvent(ctx context.Context, evt event.Event) er
 	return handler.HandleEvent(ctx, evt)
 }
 
-func NewOrderHandler(orderEventHandler *OrderEventHandler) Handler {
+func NewOrderHandlerDispatcher(orderEventHandler *OrderEventHandler) Handler {
 	return &HandlerDispatcher{
 		handlers: map[event.EventType]Handler{
 			event.OrderCreatedEventName:   HandlerFunc(orderEventHandler.HandleOrderCreated),

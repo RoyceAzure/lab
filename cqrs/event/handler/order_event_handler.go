@@ -2,17 +2,10 @@ package handler
 
 import (
 	"context"
-	"errors"
 
 	"github.com/RoyceAzure/lab/cqrs/event"
 	"github.com/RoyceAzure/lab/cqrs/infra/repository/db/model"
 	"github.com/RoyceAzure/lab/cqrs/service"
-)
-
-type OrderEventHandlerError error
-
-var (
-	errUnknownEvent OrderEventHandlerError = errors.New("unknown event")
 )
 
 // 處理order 領域相關事件
@@ -28,7 +21,7 @@ func (h *OrderEventHandler) HandleOrderCreated(ctx context.Context, evt event.Ev
 	var e *event.OrderCreatedEvent
 	var ok bool
 	if e, ok = evt.(*event.OrderCreatedEvent); !ok {
-		return errUnknownEvent
+		return errUnknownEventFormat
 	}
 
 	orderItems := []model.OrderItem{}
@@ -62,7 +55,7 @@ func (h *OrderEventHandler) HandleOrderConfirmed(ctx context.Context, evt event.
 	var e *event.OrderConfirmedEvent
 	var ok bool
 	if e, ok = evt.(*event.OrderConfirmedEvent); !ok {
-		return errUnknownEvent
+		return errUnknownEventFormat
 	}
 
 	order, err := h.orderService.GetOrder(ctx, e.OrderID)
@@ -86,7 +79,7 @@ func (h *OrderEventHandler) HandleOrderShipped(ctx context.Context, evt event.Ev
 	var e *event.OrderShippedEvent
 	var ok bool
 	if e, ok = evt.(*event.OrderShippedEvent); !ok {
-		return errUnknownEvent
+		return errUnknownEventFormat
 	}
 
 	order, err := h.orderService.GetOrder(ctx, e.OrderID)
@@ -110,7 +103,7 @@ func (h *OrderEventHandler) HandleOrderCancelled(ctx context.Context, evt event.
 	var e *event.OrderCancelledEvent
 	var ok bool
 	if e, ok = evt.(*event.OrderCancelledEvent); !ok {
-		return errUnknownEvent
+		return errUnknownEventFormat
 	}
 
 	order, err := h.orderService.GetOrder(ctx, e.OrderID)
@@ -135,7 +128,7 @@ func (h *OrderEventHandler) HandleOrderRefunded(ctx context.Context, evt event.E
 	var e *event.OrderRefundedEvent
 	var ok bool
 	if e, ok = evt.(*event.OrderRefundedEvent); !ok {
-		return errUnknownEvent
+		return errUnknownEventFormat
 	}
 
 	order, err := h.orderService.GetOrder(ctx, e.OrderID)

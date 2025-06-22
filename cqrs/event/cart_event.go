@@ -11,10 +11,18 @@ type CartCreatedEvent struct {
 	Items  []model.OrderItemData
 }
 
-type CartCommandFailedEvent struct {
+func (e *CartCreatedEvent) Type() EventType {
+	return CartCreatedEventName
+}
+
+type CartFailedEvent struct {
 	BaseEvent
 	UserID  int
 	Message string
+}
+
+func (e *CartFailedEvent) Type() EventType {
+	return CartFailedEventName
 }
 
 type CartUpdatedEvent struct {
@@ -23,12 +31,8 @@ type CartUpdatedEvent struct {
 	Details []command.CartUpdatedDetial
 }
 
-func (e *CartCommandFailedEvent) Type() EventType {
-	return CartFailedEventName
-}
-
-func (e *CartCreatedEvent) Type() EventType {
-	return CartCreatedEventName
+func (e *CartUpdatedEvent) Type() EventType {
+	return CartUpdatedEventName
 }
 
 type CartDeletedEvent struct {
