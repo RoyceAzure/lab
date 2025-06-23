@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/RoyceAzure/lab/cqrs/command"
+	"github.com/RoyceAzure/lab/cqrs/internal/command"
 	redis_cache "github.com/RoyceAzure/lab/rj_redis/pkg/cache"
 )
 
