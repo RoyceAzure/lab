@@ -77,7 +77,7 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	// 8. 啟動 Consumer
-	msgChan, errChan, err := c.Consume(ctx)
+	msgChan, errChan, err := c.Consume()
 	if err != nil {
 		log.Fatalf("Failed to consume messages: %v", err)
 	}
