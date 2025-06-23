@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"sync/atomic"
-	"time"
 
 	"github.com/segmentio/kafka-go"
 
@@ -37,10 +36,10 @@ func New(cfg *config.Config) (Producer, error) {
 	writer := &kafka.Writer{
 		Addr:         kafka.TCP(cfg.Brokers...),
 		Topic:        cfg.Topic,
-		Balancer:     &kafka.LeastBytes{},
+		Balancer:     cfg.Balancer,
 		BatchSize:    cfg.BatchSize,
 		BatchTimeout: cfg.BatchTimeout,
-		WriteTimeout: 5 * time.Second, // 添加寫入超時
+		WriteTimeout: cfg.WriteTimeout,
 		MaxAttempts:  cfg.RetryAttempts,
 		Async:        false,
 		RequiredAcks: kafka.RequiredAcks(cfg.RequiredAcks),

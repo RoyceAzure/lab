@@ -1,0 +1,61 @@
+# Kafka 集群配置
+cluster:
+  name: "local-cluster"
+  brokers:
+    - "localhost:9092"
+    - "localhost:9093"
+    - "localhost:9094"
+  
+# 主題配置
+topics:
+  - name: "test-topic"
+    partitions: 3
+    replication_factor: 3
+    configs:
+      cleanup.policy: "delete"
+      retention.ms: "604800000"  # 7 days
+      segment.bytes: "1073741824"  # 1GB
+      
+  - name: "user-events"
+    partitions: 6
+    replication_factor: 3
+    configs:
+      cleanup.policy: "compact"
+      min.cleanable.dirty.ratio: "0.01"
+      segment.bytes: "536870912"  # 512MB
+      
+  - name: "logs"
+    partitions: 3
+    replication_factor: 3
+    configs:
+      cleanup.policy: "delete"
+      retention.ms: "86400000"  # 1 day
+      
+# ACL 配置
+acls:
+  - resource_type: "topic"
+    resource_name: "test-topic"
+    principal: "User:test"
+    host: "*"
+    operation: "Read"
+    permission_type: "Allow"
+    
+  - resource_type: "topic"
+    resource_name: "user-events"
+    principal: "User:app1"
+    host: "*"
+    operation: "Write"
+    permission_type: "Allow"
+
+# 常用配置參數
+configs:
+  num.io.threads: 8
+  num.network.threads: 3
+  num.recovery.threads.per.data.dir: 1
+  socket.send.buffer.bytes: 102400
+  socket.receive.buffer.bytes: 102400
+  socket.request.max.bytes: 104857600
+  log.retention.hours: 168  # 7 days
+  log.segment.bytes: 1073741824  # 1GB
+  log.retention.check.interval.ms: 300000  # 5 minutes
+  zookeeper.connection.timeout.ms: 18000 
