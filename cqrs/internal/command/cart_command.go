@@ -1,6 +1,6 @@
 package command
 
-import "github.com/RoyceAzure/lab/cqrs/infra/repository/db/model"
+import "github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db/model"
 
 const (
 	CartCreatedCommandName CommandType = "CartCreated"

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/RoyceAzure/lab/cqrs/command"
+	"github.com/RoyceAzure/lab/cqrs/internal/command"
 	"github.com/RoyceAzure/lab/cqrs/internal/event"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db/model"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/redis_repo"

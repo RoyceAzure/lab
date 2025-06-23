@@ -1,7 +1,7 @@
 package command
 
 import (
-	"github.com/RoyceAzure/lab/cqrs/infra/repository/db/model"
+	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db/model"
 )
 
 type OrderCreatedCommand struct {

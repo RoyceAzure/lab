@@ -1,7 +1,7 @@
 package event
 
 import (
-	"github.com/RoyceAzure/lab/cqrs/command"
+	"github.com/RoyceAzure/lab/cqrs/internal/command"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db/model"
 )
 
