@@ -5,9 +5,9 @@ import (
 	"fmt"
 
 	"github.com/RoyceAzure/lab/cqrs/command"
-	"github.com/RoyceAzure/lab/cqrs/event"
-	"github.com/RoyceAzure/lab/cqrs/infra/repository/db/model"
-	"github.com/RoyceAzure/lab/cqrs/infra/repository/redis_repo"
+	"github.com/RoyceAzure/lab/cqrs/internal/event"
+	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db/model"
+	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/redis_repo"
 )
 
 // 處理cart 領域相關事件

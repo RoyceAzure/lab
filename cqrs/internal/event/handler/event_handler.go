@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/RoyceAzure/lab/cqrs/event"
+	"github.com/RoyceAzure/lab/cqrs/internal/event"
 	"github.com/RoyceAzure/lab/rj_redis/pkg/cache"
 )
 
@@ -49,7 +49,7 @@ func (d *HandlerDispatcher) HandleEvent(ctx context.Context, evt event.Event) er
 	return handler.HandleEvent(ctx, evt)
 }
 
-func NewOrderHandlerDispatcher(orderEventHandler *OrderEventHandler) Handler {
+func NewOrderEventHandlerDispatcher(orderEventHandler *OrderEventHandler) Handler {
 	return &HandlerDispatcher{
 		handlers: map[event.EventType]Handler{
 			event.OrderCreatedEventName:   HandlerFunc(orderEventHandler.HandleOrderCreated),
@@ -57,6 +57,17 @@ func NewOrderHandlerDispatcher(orderEventHandler *OrderEventHandler) Handler {
 			event.OrderShippedEventName:   HandlerFunc(orderEventHandler.HandleOrderShipped),
 			event.OrderCancelledEventName: HandlerFunc(orderEventHandler.HandleOrderCancelled),
 			event.OrderRefundedEventName:  HandlerFunc(orderEventHandler.HandleOrderRefunded),
+		},
+	}
+}
+
+func NewCartEventHandlerDispatcher(cartEventHandler *CartEventHandler) Handler {
+	return &HandlerDispatcher{
+		handlers: map[event.EventType]Handler{
+			event.CartCreatedEventName: HandlerFunc(cartEventHandler.HandleCartCreated),
+			event.CartFailedEventName:  HandlerFunc(cartEventHandler.HandleCartFailed),
+			event.CartUpdatedEventName: HandlerFunc(cartEventHandler.HandleCartUpdated),
+			event.CartDeletedEventName: HandlerFunc(cartEventHandler.HandleCartDeleted),
 		},
 	}
 }

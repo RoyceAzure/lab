@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/RoyceAzure/lab/cqrs/infra/repository/db/model"
+	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db/model"
 
 	"github.com/RoyceAzure/lab/rj_redis/pkg/cache"
 	"github.com/shopspring/decimal"

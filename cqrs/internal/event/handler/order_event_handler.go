@@ -3,9 +3,9 @@ package handler
 import (
 	"context"
 
-	"github.com/RoyceAzure/lab/cqrs/event"
-	"github.com/RoyceAzure/lab/cqrs/infra/repository/db/model"
-	"github.com/RoyceAzure/lab/cqrs/service"
+	"github.com/RoyceAzure/lab/cqrs/internal/event"
+	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db/model"
+	"github.com/RoyceAzure/lab/cqrs/internal/service"
 )
 
 // 處理order 領域相關事件

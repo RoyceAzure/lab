@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/RoyceAzure/lab/cqrs/infra/repository/db"
+	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db"
 )
 
 type ProductServiceError error

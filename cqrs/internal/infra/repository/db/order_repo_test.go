@@ -3,7 +3,7 @@ package db
 import (
 	"time"
 
-	"github.com/RoyceAzure/lab/cqrs/infra/repository/db/model"
+	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db/model"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
