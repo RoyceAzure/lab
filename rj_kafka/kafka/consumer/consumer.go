@@ -69,7 +69,6 @@ func New(cfg *config.Config) (Consumer, error) {
 		MaxBytes:       cfg.ConsumerMaxBytes,
 		MaxWait:        cfg.ConsumerMaxWait,
 		CommitInterval: cfg.CommitInterval,
-		Partition:      cfg.Partition,
 
 		// 重連機制設定
 		Dialer: &kafka.Dialer{
