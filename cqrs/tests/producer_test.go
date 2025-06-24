@@ -151,8 +151,9 @@ type ProducerTestSuite struct {
 
 	redisClient *redis.Client
 	// 測試資料
-	testUsers    []*model.User
-	testProducts []*model.Product
+	testUsers     []*model.User
+	testProducts  []*model.Product
+	initialStocks map[string]uint // 記錄每個商品的初始庫存
 }
 
 func TestProducerTestSuite(t *testing.T) {
@@ -203,6 +204,9 @@ func (suite *ProducerTestSuite) SetupSuite() {
 func (suite *ProducerTestSuite) SetupTest() {
 	ctx := context.Background()
 
+	// 初始化 initialStocks map
+	suite.initialStocks = make(map[string]uint)
+
 	// 準備測試使用者資料
 	suite.testUsers = make([]*model.User, UserNum)
 	for i := 0; i < UserNum; i++ {
@@ -233,12 +237,16 @@ func (suite *ProducerTestSuite) SetupTest() {
 			Price:     price,
 		}
 
+		initialStock := uint((i + 1) * 10)
+		// 記錄初始庫存
+		suite.initialStocks[productID] = initialStock
+
 		// 建立商品
-		err := suite.productRepo.CreateProductStock(ctx, productID, uint((i+1)*10))
+		err := suite.productRepo.CreateProductStock(ctx, productID, initialStock)
 		require.NoError(suite.T(), err)
 
 		// 設置商品庫存
-		err = suite.productRepo.CreateProductStock(ctx, productID, uint((i+1)*10))
+		err = suite.productRepo.CreateProductStock(ctx, productID, initialStock)
 		require.NoError(suite.T(), err)
 
 		// 確保商品和庫存都已經被創建
@@ -246,7 +254,7 @@ func (suite *ProducerTestSuite) SetupTest() {
 		require.NoError(suite.T(), err)
 		stock, err := suite.productRepo.GetProductStock(ctx, productID)
 		require.NoError(suite.T(), err)
-		require.Equal(suite.T(), uint((i+1)*10), stock)
+		require.Equal(suite.T(), initialStock, stock)
 	}
 }
 
@@ -450,7 +458,7 @@ func (suite *ProducerTestSuite) TestConcurrentCartOperations() {
 	defer cancel()
 
 	// 收集所有使用者的錯誤通道
-	errChan := make(chan error, 100)
+	errChan := make(chan error, 500)
 
 	go func() {
 		for err := range errChan {
@@ -474,7 +482,39 @@ func (suite *ProducerTestSuite) TestConcurrentCartOperations() {
 	suite.T().Logf("all users cart operations completed")
 
 	//驗證階段
-
 	// 等待一段時間讓事件被處理
 	time.Sleep(2 * time.Second)
+
+	// 1. 獲取所有商品的當前庫存
+	currentStocks := make(map[string]uint)
+	for _, product := range suite.testProducts {
+		stock, err := suite.productRepo.GetProductStock(ctx, product.ProductID)
+		require.NoError(suite.T(), err)
+		currentStocks[product.ProductID] = stock
+	}
+
+	// 2. 獲取所有使用者的購物車內容
+	cartQuantities := make(map[string]uint)
+	for _, user := range suite.testUsers {
+		cart, err := suite.cartRepo.Get(ctx, user.UserID)
+		if err != nil {
+			continue // 跳過空購物車
+		}
+		for _, item := range cart.OrderItems {
+			cartQuantities[item.ProductID] += uint(item.Quantity)
+		}
+	}
+
+	// 3. 驗證每個商品的庫存變化是否與購物車數量相符
+	for productID, initialStock := range suite.initialStocks {
+		currentStock := currentStocks[productID]
+		inCarts := cartQuantities[productID]
+
+		// 初始庫存 - 當前庫存 = 購物車中的總數量
+		suite.T().Logf("Product %s: initial=%d, current=%d, in_carts=%d",
+			productID, initialStock, currentStock, inCarts)
+
+		require.Equal(suite.T(), initialStock-currentStock, inCarts,
+			"Product %s: stock difference should equal total in carts", productID)
+	}
 }
