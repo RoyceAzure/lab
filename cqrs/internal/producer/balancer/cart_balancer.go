@@ -3,19 +3,18 @@ package balancer
 import (
 	"strconv"
 
-	"github.com/RoyceAzure/lab/rj_kafka/kafka/producer"
 	"github.com/segmentio/kafka-go"
 )
 
 type CartBalancer struct {
-	BaseBalancer
-	producer producer.Producer
+	numPartitions int
 }
 
-func NewCartBalancer(producer producer.Producer, numPartitions int) IBaseBalancer {
-	return &CartBalancer{BaseBalancer: NewBaseBalancer(numPartitions), producer: producer}
+func NewCartBalancer(numPartitions int) IBaseBalancer {
+	return &CartBalancer{numPartitions: numPartitions}
 }
 
+// 購物車command 使用userid做key，所以使用userid做partition
 func (c *CartBalancer) Balance(msg kafka.Message, partitions ...int) (partition int) {
 	userID, err := strconv.Atoi(string(msg.Key))
 	if err != nil {

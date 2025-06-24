@@ -25,7 +25,7 @@ var (
 // 購物車命令處理器
 // 使用state based 處理庫存快取 product stock相關操作
 // 發送cart event 到kafka，由cart event handler 處理
-// topic: cart
+// topic: 由producer創建時設置
 // key: userID 一個userID只會有一個購物車
 type cartCommandHandler struct {
 	userService    *service.UserService
@@ -126,7 +126,6 @@ func prepareCartEventMessage(userID int, orderItems []model.OrderItemData) (mess
 	})
 	return message.Message{
 		Key:   []byte(strconv.Itoa(userID)),
-		Topic: "cart",
 		Value: eventBytes,
 	}, err
 }
@@ -143,7 +142,6 @@ func prepareCartFailedEventMessage(userID int, errs ...error) (message.Message, 
 	})
 	return message.Message{
 		Key:   []byte(strconv.Itoa(userID)),
-		Topic: "cart",
 		Value: eventBytes,
 	}, err
 }
@@ -225,7 +223,6 @@ func prepareCartUpdatedEventMessage(userID int, details []command.CartUpdatedDet
 
 	return message.Message{
 		Key:   []byte(strconv.Itoa(userID)),
-		Topic: "cart",
 		Value: eventBytes,
 	}, err
 }
@@ -274,7 +271,6 @@ func prepareCartDeletedEventMessage(userID int) (message.Message, error) {
 	})
 	return message.Message{
 		Key:   []byte(strconv.Itoa(userID)),
-		Topic: "cart",
 		Value: eventBytes,
 	}, err
 }

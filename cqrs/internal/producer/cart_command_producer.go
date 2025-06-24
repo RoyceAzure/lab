@@ -12,6 +12,7 @@ import (
 )
 
 // 需要根據userid做balancer分區
+// topic: 由producer創建時設置
 type CartCommandProducer struct {
 	producer producer.Producer
 }
@@ -74,7 +75,6 @@ func (c *CartCommandProducer) convertToMessage(userID int, cmd command.Command) 
 	}
 
 	msg := message.Message{
-		Topic: "cart",
 		Key:   []byte(fmt.Sprintf("%d", userID)),
 		Value: cmdValue,
 		Headers: []message.Header{

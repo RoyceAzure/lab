@@ -58,3 +58,10 @@ func loadConfig[T any]() (config *T, err error) {
 	}
 	return
 }
+
+type KafkaTopic string
+
+var (
+	KafkaTopicCartEvent   = KafkaTopic("cart-evt")
+	KafkaTopicCartCommand = KafkaTopic("cart-cmd")
+)
