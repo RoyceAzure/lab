@@ -2,22 +2,14 @@ package db
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db/model"
-
 	"github.com/RoyceAzure/lab/rj_redis/pkg/cache"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
-)
-
-type ProductRepoError error
-
-var (
-	ProductNotFound ProductRepoError = errors.New("product not found")
 )
 
 type ProductRepo struct {
@@ -289,57 +281,4 @@ func (s *ProductRepo) GetPopularProducts(limit int) ([]model.Product, error) {
 		Limit(limit).
 		Find(&products).Error
 	return products, err
-}
-
-// redis 商品庫存
-// 商品庫存先統一使用redis 當作唯一真相來源
-// 結構:
-//
-//	商品ID: {
-//		stock: 100,
-//	}
-//
-//	商品ID: {
-//		stock: 100,
-//	}
-func (s *ProductRepo) CreateProductStock(ctx context.Context, productID string, stock uint) error {
-	redisKey := productID
-	err := s.ProductCache.HSet(ctx, redisKey, "stock", stock)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-// 取得 庫存商品數量
-// 錯誤:
-//   - ProductNotFound: 商品不存在
-//   - err: 其他錯誤
-func (s *ProductRepo) GetProductStock(ctx context.Context, productID string) (uint, error) {
-	redisKey := productID
-	stock, err := s.ProductCache.HGet(ctx, redisKey, "stock")
-	if err != nil {
-		return 0, err
-	}
-
-	if stock == "" {
-		return 0, ProductNotFound
-	}
-
-	stockInt, err := strconv.ParseUint(stock, 10, 64)
-	if err != nil {
-		return 0, err
-	}
-
-	return uint(stockInt), nil
-}
-
-// 修改庫存商品數量
-func (s *ProductRepo) DeltaProductStock(ctx context.Context, productID string, delta int64) error {
-	redisKey := productID
-	_, err := s.ProductCache.HIncrBy(ctx, redisKey, "stock", delta)
-	if err != nil {
-		return err
-	}
-	return nil
 }

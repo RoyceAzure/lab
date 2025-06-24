@@ -12,17 +12,17 @@ import (
 
 // 處理cart 領域相關事件
 // state based，直接修改redis購物車資料
-type CartEventHandler struct {
+type cartEventHandler struct {
 	cartRepo *redis_repo.CartRepo
 }
 
-func NewCartEventHandler(cartRepo *redis_repo.CartRepo) *CartEventHandler {
-	return &CartEventHandler{cartRepo: cartRepo}
+func newCartEventHandler(cartRepo *redis_repo.CartRepo) *cartEventHandler {
+	return &cartEventHandler{cartRepo: cartRepo}
 }
 
 // 處理CartCreatedEvent
 // 寫入redis cart 資料
-func (h *CartEventHandler) HandleCartCreated(ctx context.Context, evt event.Event) error {
+func (h *cartEventHandler) HandleCartCreated(ctx context.Context, evt event.Event) error {
 	var e *event.CartCreatedEvent
 	var ok bool
 	if e, ok = evt.(*event.CartCreatedEvent); !ok {
@@ -50,7 +50,7 @@ func (h *CartEventHandler) HandleCartCreated(ctx context.Context, evt event.Even
 	return nil
 }
 
-func (h *CartEventHandler) HandleCartFailed(ctx context.Context, evt event.Event) error {
+func (h *cartEventHandler) HandleCartFailed(ctx context.Context, evt event.Event) error {
 	var e *event.CartFailedEvent
 	var ok bool
 	if e, ok = evt.(*event.CartFailedEvent); !ok {
@@ -64,7 +64,7 @@ func (h *CartEventHandler) HandleCartFailed(ctx context.Context, evt event.Event
 	return nil
 }
 
-func (h *CartEventHandler) HandleCartUpdated(ctx context.Context, evt event.Event) error {
+func (h *cartEventHandler) HandleCartUpdated(ctx context.Context, evt event.Event) error {
 	var e *event.CartUpdatedEvent
 	var ok bool
 	if e, ok = evt.(*event.CartUpdatedEvent); !ok {
@@ -88,7 +88,7 @@ func (h *CartEventHandler) HandleCartUpdated(ctx context.Context, evt event.Even
 	return nil
 }
 
-func (h *CartEventHandler) HandleCartDeleted(ctx context.Context, evt event.Event) error {
+func (h *cartEventHandler) HandleCartDeleted(ctx context.Context, evt event.Event) error {
 	var e *event.CartDeletedEvent
 	var ok bool
 	if e, ok = evt.(*event.CartDeletedEvent); !ok {

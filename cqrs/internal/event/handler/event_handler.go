@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/RoyceAzure/lab/cqrs/internal/event"
+	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/redis_repo"
 	"github.com/RoyceAzure/lab/rj_redis/pkg/cache"
 )
 
@@ -61,7 +62,8 @@ func NewOrderEventHandlerDispatcher(orderEventHandler *OrderEventHandler) Handle
 	}
 }
 
-func NewCartEventHandlerDispatcher(cartEventHandler *CartEventHandler) Handler {
+func NewCartEventHandler(cartRepo *redis_repo.CartRepo) Handler {
+	cartEventHandler := newCartEventHandler(cartRepo)
 	return &HandlerDispatcher{
 		handlers: map[event.EventType]Handler{
 			event.CartCreatedEventName: HandlerFunc(cartEventHandler.HandleCartCreated),

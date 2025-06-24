@@ -22,24 +22,26 @@ var (
 	errCartCommand CartCommandError = errors.New("cart_command_format_error")
 )
 
-// 購物車事件
+// 購物車命令處理器
+// 使用state based 處理庫存快取 product stock相關操作
+// 發送cart event 到kafka，由cart event handler 處理
 // topic: cart
 // key: userID 一個userID只會有一個購物車
-type CartCommandHandler struct {
+type cartCommandHandler struct {
 	userService    *service.UserService
 	productService *service.ProductService
 	kafkaProducer  producer.Producer
 }
 
-func NewCartCommandHandler(userService *service.UserService, productService *service.ProductService, kafkaProducer producer.Producer) *CartCommandHandler {
-	return &CartCommandHandler{userService: userService, productService: productService, kafkaProducer: kafkaProducer}
+func newCartCommandHandler(userService *service.UserService, productService *service.ProductService, kafkaProducer producer.Producer) *cartCommandHandler {
+	return &cartCommandHandler{userService: userService, productService: productService, kafkaProducer: kafkaProducer}
 }
 
 // 驗證命令
 // 強一致性處理庫存狀態，一個商品同時間只有一個thread處理
 // 購物車Connand 使用delta 處理庫存，所以需要處理冪等(已經由HandlerDispatcher處理)
 // 庫存處理不使用event，使用redis state-based
-func (h *CartCommandHandler) HandleCartCreated(ctx context.Context, cmd command.Command) error {
+func (h *cartCommandHandler) HandleCartCreated(ctx context.Context, cmd command.Command) error {
 	var c *command.CartCreatedCommand
 	var ok bool
 	if c, ok = cmd.(*command.CartCreatedCommand); !ok {
@@ -81,7 +83,7 @@ func (h *CartCommandHandler) HandleCartCreated(ctx context.Context, cmd command.
 
 // 事件發布
 // TODO :若是有任何失敗，需要紀錄並後續處理
-func (h *CartCommandHandler) produceCartEvent(ctx context.Context, userID int, orderItems []model.OrderItemData) {
+func (h *cartCommandHandler) produceCartEvent(ctx context.Context, userID int, orderItems []model.OrderItemData) {
 	msg, err := prepareCartEventMessage(userID, orderItems)
 	if err != nil {
 		return
@@ -95,7 +97,7 @@ func (h *CartCommandHandler) produceCartEvent(ctx context.Context, userID int, o
 
 // 事件發布
 // TODO :若是有任何失敗，需要紀錄並後續處理
-func (h *CartCommandHandler) produceCartFailedEvent(ctx context.Context, userID int, errs ...error) {
+func (h *cartCommandHandler) produceCartFailedEvent(ctx context.Context, userID int, errs ...error) {
 	if len(errs) == 0 {
 		return
 	}
@@ -150,7 +152,7 @@ func prepareCartFailedEventMessage(userID int, errs ...error) (message.Message, 
 // 強一致性處理庫存狀態，一個商品同時間只有一個thread處理
 // 購物車Connand 使用delta 處理庫存，所以需要處理冪等(已經由HandlerDispatcher處理)
 // 庫存處理不使用event，使用redis state-based
-func (h *CartCommandHandler) HandleCartUpdated(ctx context.Context, cmd command.Command) error {
+func (h *cartCommandHandler) HandleCartUpdated(ctx context.Context, cmd command.Command) error {
 	var c *command.CartUpdatedCommand
 	var ok bool
 	if c, ok = cmd.(*command.CartUpdatedCommand); !ok {
@@ -197,7 +199,7 @@ func (h *CartCommandHandler) HandleCartUpdated(ctx context.Context, cmd command.
 // 更新購物車事件發布
 // 發送狀態變更事件
 // TODO :若是有任何失敗，需要紀錄並後續處理
-func (h *CartCommandHandler) produceCartUpdatedEvent(ctx context.Context, userID int, details []command.CartUpdatedDetial) {
+func (h *cartCommandHandler) produceCartUpdatedEvent(ctx context.Context, userID int, details []command.CartUpdatedDetial) {
 	msg, err := prepareCartUpdatedEventMessage(userID, details)
 	if err != nil {
 		return
@@ -230,7 +232,7 @@ func prepareCartUpdatedEventMessage(userID int, details []command.CartUpdatedDet
 
 // 購物車確認-> 進入訂單狀態後 會刪除購物車
 // 或者購物車直接刪除
-func (h *CartCommandHandler) HandleCartDeleted(ctx context.Context, cmd command.Command) error {
+func (h *cartCommandHandler) HandleCartDeleted(ctx context.Context, cmd command.Command) error {
 	var c *command.CartDeletedCommand
 	var ok bool
 	if c, ok = cmd.(*command.CartDeletedCommand); !ok {
@@ -248,7 +250,7 @@ func (h *CartCommandHandler) HandleCartDeleted(ctx context.Context, cmd command.
 	return nil
 }
 
-func (h *CartCommandHandler) produceCartDeletedEvent(ctx context.Context, userID int) {
+func (h *cartCommandHandler) produceCartDeletedEvent(ctx context.Context, userID int) {
 	msg, err := prepareCartDeletedEventMessage(userID)
 	if err != nil {
 		return

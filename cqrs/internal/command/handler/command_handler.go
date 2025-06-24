@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"github.com/RoyceAzure/lab/cqrs/internal/command"
+	"github.com/RoyceAzure/lab/cqrs/internal/service"
+	"github.com/RoyceAzure/lab/rj_kafka/kafka/producer"
 	redis_cache "github.com/RoyceAzure/lab/rj_redis/pkg/cache"
 )
 
@@ -58,6 +60,17 @@ func NewOrderHandler(orderHandler *OrderCommandHandler) Handler {
 			command.OrderShippedCommandName:   HandlerFunc(orderHandler.OrderShippedCommand),
 			command.OrderCancelledCommandName: HandlerFunc(orderHandler.OrderCancelledCommand),
 			command.OrderRefundedCommandName:  HandlerFunc(orderHandler.OrderRefundedCommand),
+		},
+	}
+}
+
+func NewCartCommandHandler(userService *service.UserService, productService *service.ProductService, kafkaProducer producer.Producer) Handler {
+	cartHandler := newCartCommandHandler(userService, productService, kafkaProducer)
+	return &HandlerDispatcher{
+		handlers: map[command.CommandType]Handler{
+			command.CartCreatedCommandName: HandlerFunc(cartHandler.HandleCartCreated),
+			command.CartUpdatedCommandName: HandlerFunc(cartHandler.HandleCartUpdated),
+			command.CartDeletedCommandName: HandlerFunc(cartHandler.HandleCartDeleted),
 		},
 	}
 }

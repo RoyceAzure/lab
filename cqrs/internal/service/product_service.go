@@ -4,21 +4,20 @@ import (
 	"context"
 	"errors"
 
-	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db"
+	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/redis_repo"
 )
 
 type ProductServiceError error
 
 var (
-	errProductNotFound       ProductServiceError = errors.New("product_not_found")
 	errProductStockNotEnough ProductServiceError = errors.New("product_stock_not_enough")
 )
 
 type ProductService struct {
-	productRepo *db.ProductRepo
+	productRepo *redis_repo.ProductRepo
 }
 
-func NewProductService(productRepo *db.ProductRepo) *ProductService {
+func NewProductService(productRepo *redis_repo.ProductRepo) *ProductService {
 	return &ProductService{productRepo: productRepo}
 }
 
