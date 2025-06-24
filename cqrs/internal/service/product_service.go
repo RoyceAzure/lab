@@ -2,15 +2,8 @@ package service
 
 import (
 	"context"
-	"errors"
 
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/redis_repo"
-)
-
-type ProductServiceError error
-
-var (
-	errProductStockNotEnough ProductServiceError = errors.New("product_stock_not_enough")
 )
 
 type ProductService struct {
@@ -39,7 +32,7 @@ func (s *ProductService) CheckProductStockEnough(ctx context.Context, productID 
 }
 
 func (s *ProductService) AddProductStock(ctx context.Context, productID string, quantity uint) error {
-	return s.productRepo.DeltaProductStock(ctx, productID, int64(quantity))
+	return s.productRepo.AddProductStock(ctx, productID, quantity)
 }
 
 // 扣除庫存
@@ -49,12 +42,6 @@ func (s *ProductService) AddProductStock(ctx context.Context, productID string, 
 //   - errProductNotFound: 商品不存在
 //   - err: 其他錯誤
 func (s *ProductService) SubProductStock(ctx context.Context, productID string, quantity uint) error {
-	isEnough, err := s.CheckProductStockEnough(ctx, productID, quantity)
-	if err != nil {
-		return err
-	}
-	if !isEnough {
-		return errProductStockNotEnough
-	}
-	return s.productRepo.DeltaProductStock(ctx, productID, int64(-quantity))
+	_, err := s.productRepo.DeductProductStock(ctx, productID, quantity)
+	return err
 }

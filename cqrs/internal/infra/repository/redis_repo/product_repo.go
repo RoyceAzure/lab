@@ -12,7 +12,8 @@ import (
 type ProductRepoError error
 
 var (
-	ErrProductNotFound ProductRepoError = errors.New("product not found")
+	ErrProductNotFound       ProductRepoError = errors.New("product not found")
+	ErrProductStockNotEnough ProductRepoError = errors.New("product stock not enough")
 )
 
 type ProductRepo struct {
@@ -71,9 +72,9 @@ func (s *ProductRepo) GetProductStock(ctx context.Context, productID string) (ui
 }
 
 // 修改庫存商品數量
-func (s *ProductRepo) DeltaProductStock(ctx context.Context, productID string, delta int64) error {
+func (s *ProductRepo) AddProductStock(ctx context.Context, productID string, quantity uint) error {
 	redisKey := generateProductStockKey(productID)
-	err := s.productCache.HIncrBy(ctx, redisKey, "stock", delta).Err()
+	err := s.productCache.HIncrBy(ctx, redisKey, "stock", int64(quantity)).Err()
 	if err != nil {
 		return err
 	}
@@ -88,4 +89,52 @@ func (s *ProductRepo) DeleteProductStock(ctx context.Context, productID string) 
 		return err
 	}
 	return nil
+}
+
+// 原子性扣減庫存
+func (s *ProductRepo) DeductProductStock(ctx context.Context, productID string, quantity uint) (int64, error) {
+	redisKey := generateProductStockKey(productID)
+
+	const stockDeductionScript = `
+	local key = KEYS[1]
+	local quantity = tonumber(ARGV[1])
+	local field = ARGV[2]
+	
+	if redis.call('EXISTS', key) == 0 then
+		return -1
+	end
+	
+	local current_stock = redis.call('HGET', key, field)
+	if not current_stock then
+		return -1
+	end
+	
+	current_stock = tonumber(current_stock)
+	
+	if current_stock < quantity then
+		return 0
+	end
+	
+	local new_stock = redis.call('HINCRBY', key, field, -quantity)
+	return new_stock
+	`
+
+	result, err := s.productCache.Eval(ctx, stockDeductionScript, []string{redisKey}, quantity, "stock").Result()
+	if err != nil {
+		return 0, fmt.Errorf("failed to deduct stock: %w", err)
+	}
+
+	resultInt, ok := result.(int64)
+	if !ok {
+		return 0, fmt.Errorf("unexpected result type: %T", result)
+	}
+
+	switch {
+	case resultInt == -1:
+		return 0, ErrProductNotFound
+	case resultInt == 0:
+		return 0, ErrProductStockNotEnough
+	default:
+		return resultInt, nil // 返回扣減後的庫存
+	}
 }
