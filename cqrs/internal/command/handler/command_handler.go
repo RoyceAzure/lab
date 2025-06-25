@@ -8,7 +8,7 @@ import (
 	"github.com/RoyceAzure/lab/cqrs/internal/command"
 	"github.com/RoyceAzure/lab/cqrs/internal/service"
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/producer"
-	redis_cache "github.com/RoyceAzure/lab/rj_redis/pkg/cache"
+	"github.com/redis/go-redis/v9"
 )
 
 type HandlerError error
@@ -29,19 +29,21 @@ type Handler interface {
 
 type HandlerDispatcher struct {
 	handlers     map[command.CommandType]Handler
-	commandCache redis_cache.Cache
+	commandCache *redis.Client
 }
 
-func NewHandlerDispatcher(handlers map[command.CommandType]Handler, commandCache redis_cache.Cache) *HandlerDispatcher {
+func NewHandlerDispatcher(handlers map[command.CommandType]Handler, commandCache *redis.Client) *HandlerDispatcher {
 	return &HandlerDispatcher{handlers: handlers, commandCache: commandCache}
 }
 
 func (d *HandlerDispatcher) HandleCommand(ctx context.Context, cmd command.Command) error {
 	// 檢查命令是否已經處理過
-	commandKey := fmt.Sprintf("%s:%s", cmd.Type(), cmd.GetID())
-	_, err := d.commandCache.Get(ctx, commandKey)
-	if err != nil {
-		return err
+	if d.commandCache != nil {
+		commandKey := fmt.Sprintf("%s:%s", cmd.Type(), cmd.GetID())
+		_, err := d.commandCache.Get(ctx, commandKey).Result()
+		if err != nil && err != redis.Nil {
+			return err
+		}
 	}
 
 	handler, ok := d.handlers[cmd.Type()]

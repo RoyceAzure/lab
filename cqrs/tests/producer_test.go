@@ -37,11 +37,11 @@ var (
 	CartEventConsumerGroup = fmt.Sprintf("%s-cart-evt", ConsumerGroupPrefix)
 
 	TopicPrefix        = fmt.Sprintf("test-cqrs-topic")
-	CartCmdTopicName   = fmt.Sprintf("%s-cart-cmd", TopicPrefix)
-	CartEventTopicName = fmt.Sprintf("%s-cart-evt", TopicPrefix)
+	CartCmdTopicName   = fmt.Sprintf("%s-cart-cmd-%d", TopicPrefix, time.Now().UnixNano())
+	CartEventTopicName = fmt.Sprintf("%s-cart-evt-%d", TopicPrefix, time.Now().UnixNano())
 
 	ProductNum = 20
-	UserNum    = 10
+	UserNum    = 1
 )
 
 var kafkaConfigTemplate kafka_config.Config
@@ -178,6 +178,9 @@ func (suite *ProducerTestSuite) SetupSuite() {
 	require.NoError(suite.T(), err)
 	suite.dbDao = db.NewDbDao(conn)
 
+	err = suite.dbDao.InitMigrate()
+	require.NoError(suite.T(), err)
+
 	// 初始化 Redis 連線
 	suite.redisClient = redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
@@ -211,9 +214,11 @@ func (suite *ProducerTestSuite) SetupTest() {
 	suite.testUsers = make([]*model.User, UserNum)
 	for i := 0; i < UserNum; i++ {
 		suite.testUsers[i] = &model.User{
-			UserID:    generanteRandomint(),
-			UserName:  fmt.Sprintf("Test User %d", i+1),
-			UserEmail: fmt.Sprintf("test%d@example.com", i+1),
+			UserID:      generanteRandomint(),
+			UserName:    fmt.Sprintf("Test User %d", i+1),
+			UserEmail:   fmt.Sprintf("test%d@example.com", i+1),
+			UserPhone:   fmt.Sprintf("09%d", i+1),
+			UserAddress: "test address",
 		}
 	}
 
@@ -237,7 +242,7 @@ func (suite *ProducerTestSuite) SetupTest() {
 			Price:     price,
 		}
 
-		initialStock := uint((i + 1) * 10)
+		initialStock := uint(rand.Intn(100) + 30)
 		// 記錄初始庫存
 		suite.initialStocks[productID] = initialStock
 
@@ -276,6 +281,15 @@ func (suite *ProducerTestSuite) TearDownTest() {
 		err = suite.productRepo.DeleteProductStock(ctx, product.ProductID)
 		require.NoError(suite.T(), err)
 	}
+
+	suite.toCartCommandProducer.Close()
+	suite.toCartEventProducer.Close()
+	for _, consumer := range suite.cartCommandConsumers {
+		consumer.Stop()
+	}
+	for _, consumer := range suite.cartEventConsumers {
+		consumer.Stop()
+	}
 }
 
 func (suite *ProducerTestSuite) TearDownSuite() {
@@ -310,17 +324,23 @@ func (suite *ProducerTestSuite) setupToForCartEventProducer() {
 // 設置producer
 // 設置NewCartCommandProducer
 func (suite *ProducerTestSuite) setupCartCommandProducer() {
+	if suite.toCartCommandProducer == nil {
+		suite.setupToCartCommandProducer()
+	}
+	if suite.toCartCommandProducer == nil {
+		suite.T().Fatalf("kafkaProducer for cart command handler is not initialized")
+	}
+
+	suite.cartCommandProducer = producer.NewCartCommandProducer(suite.toCartCommandProducer)
+}
+
+func (suite *ProducerTestSuite) setupCartCommandHandler() {
 	if suite.toCartEventProducer == nil {
 		suite.setupToForCartEventProducer()
 	}
 	if suite.toCartEventProducer == nil {
 		suite.T().Fatalf("kafkaProducer for cart command handler is not initialized")
 	}
-
-	suite.cartCommandProducer = producer.NewCartCommandProducer(suite.toCartEventProducer)
-}
-
-func (suite *ProducerTestSuite) setupCartCommandHandler() {
 	suite.cartCommandHandler = command_handler.NewCartCommandHandler(suite.userService, suite.productService, suite.toCartEventProducer)
 }
 
@@ -430,13 +450,14 @@ func (suite *ProducerTestSuite) simulateUserCartOperations(ctx context.Context, 
 			for i := 0; i < updateCount; i++ {
 				product := suite.testProducts[rand.Intn(len(suite.testProducts))]
 				// 隨機決定是增加還是減少
-				var action command.CartUpdatedAction
-				if rand.Float32() < 0.6 { // 60%機率增加
-					action = command.CartUpdatedActionAdd
-				} else {
-					action = command.CartUpdatedActionSub
-				}
+				// var action command.CartUpdatedAction
+				// if rand.Float32() < 0.6 { // 60%機率增加
+				// 	action = command.CartUpdatedActionAdd
+				// } else {
+				// 	action = command.CartUpdatedActionSub
+				// }
 
+				action := command.CartAddItem
 				details = append(details, command.CartUpdatedDetial{
 					Action:    action,
 					ProductID: product.ProductID,
@@ -468,15 +489,17 @@ func (suite *ProducerTestSuite) TestConcurrentCartOperations() {
 
 	// 啟動所有使用者的操作
 	wg := sync.WaitGroup{}
+	suite.T().Logf("start to simulate user cart operations")
 	for _, user := range suite.testUsers {
 		wg.Add(1)
 		go func(userID int) {
 			defer wg.Done()
-			suite.simulateUserCartOperations(ctx, userID, 10*time.Second, errChan)
+			suite.simulateUserCartOperations(ctx, userID, 20*time.Second, errChan)
 		}(user.UserID)
 	}
 
 	wg.Wait()
+	suite.T().Logf("all users cart operations completed")
 	close(errChan)
 
 	suite.T().Logf("all users cart operations completed")

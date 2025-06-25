@@ -16,101 +16,49 @@ import (
 type ConsumerError error
 
 var (
-	ErrConsumerClosed      = errors.New("consumer closed")
-	ErrCommandTypeNotFound = errors.New("command type not found")
+	ErrConsumerClosed       = errors.New("consumer closed")
+	ErrCommandTypeNotFound  = errors.New("command type not found")
+	ErrUnknownEventFormat   = errors.New("unknown event format")
+	ErrUnknownCommandFormat = errors.New("unknown command format")
 )
 
-// ConsumeData to event.Event interface
-type EventDataAdapter struct {
-	ConsumeData
+// command and event handler adapter
+type handlerAdapter struct {
+	originalCMDHandler command_handler.Handler
+	originalEVTHandler event_handler.Handler
 }
 
-func newEventDataAdapter(data ConsumeData) *EventDataAdapter {
-	return &EventDataAdapter{data}
+func newHandlerAdapter(cmdHandler command_handler.Handler, evtHandler event_handler.Handler) *handlerAdapter {
+	return &handlerAdapter{cmdHandler, evtHandler}
 }
 
-func (e *EventDataAdapter) Type() event.EventType {
-	return event.EventType(e.ConsumeData.Type())
+func (a *handlerAdapter) Handle(ctx context.Context, data consumeData) error {
+	if data.IsCommand() {
+		return a.originalCMDHandler.HandleCommand(ctx, data.Command())
+	}
+	return a.originalEVTHandler.HandleEvent(ctx, data.Event())
 }
 
-func (e *EventDataAdapter) GetID() string {
-	return e.ConsumeData.GetID()
+// consumeData is a union of command and event
+type consumeData struct {
+	command command.Command
+	event   event.Event
 }
 
-// event.Event to ConsumeData interface
-type EventToConsumeDataAdapter struct {
-	event.Event
+func (d consumeData) IsCommand() bool {
+	return d.command != nil
 }
 
-func newEventToConsumeDataAdapter(evt event.Event) *EventToConsumeDataAdapter {
-	return &EventToConsumeDataAdapter{evt}
+func (d consumeData) IsEvent() bool {
+	return d.event != nil
 }
 
-func (e *EventToConsumeDataAdapter) Type() string {
-	return string(e.Event.Type())
+func (d consumeData) Command() command.Command {
+	return d.command
 }
 
-func (e *EventToConsumeDataAdapter) GetID() string {
-	return e.Event.GetID()
-}
-
-// event_handler.Handler to ConsumerHandler interface
-type eventHandlerAdapter struct {
-	originalHandler event_handler.Handler
-}
-
-func newEventHandlerAdapter(handler event_handler.Handler) *eventHandlerAdapter {
-	return &eventHandlerAdapter{handler}
-}
-func (a *eventHandlerAdapter) Handle(ctx context.Context, data ConsumeData) error {
-	return a.originalHandler.HandleEvent(ctx, newEventDataAdapter(data))
-}
-
-// command.Command to ConsumeData interface
-type CommandToConsumeDataAdapter struct {
-	command.Command
-}
-
-func newCommandToConsumeDataAdapter(cmd command.Command) *CommandToConsumeDataAdapter {
-	return &CommandToConsumeDataAdapter{cmd}
-}
-
-func (c *CommandToConsumeDataAdapter) Type() string {
-	return string(c.Command.Type())
-}
-
-func (c *CommandToConsumeDataAdapter) GetID() string {
-	return c.Command.GetID()
-}
-
-// ConsumeData to command.Command interface
-type ConsumeDataToCommandAdapter struct {
-	ConsumeData
-}
-
-func newConsumeDataToCommandAdapter(data ConsumeData) *ConsumeDataToCommandAdapter {
-	return &ConsumeDataToCommandAdapter{data}
-}
-
-func (c *ConsumeDataToCommandAdapter) Type() command.CommandType {
-	return command.CommandType(c.ConsumeData.Type())
-}
-
-func (c *ConsumeDataToCommandAdapter) GetID() string {
-	return c.ConsumeData.GetID()
-}
-
-// command_handler.Handler to ConsumerHandler interface
-type commandHandlerAdapter struct {
-	originalHandler command_handler.Handler
-}
-
-func newCommandHandlerAdapter(handler command_handler.Handler) *commandHandlerAdapter {
-	return &commandHandlerAdapter{handler}
-}
-
-func (a *commandHandlerAdapter) Handle(ctx context.Context, data ConsumeData) error {
-	return a.originalHandler.HandleCommand(ctx, newConsumeDataToCommandAdapter(data))
+func (d consumeData) Event() event.Event {
+	return d.event
 }
 
 type IBaseConsumer interface {
@@ -124,14 +72,9 @@ type baseConsumer struct {
 	closeChan chan struct{}
 }
 
-type ConsumeData interface {
-	Type() string
-	GetID() string
-}
-
 type ConsumerHandler interface {
-	Handle(ctx context.Context, data ConsumeData) error
-	transformData(msg message.Message) (ConsumeData, error)
+	Handle(ctx context.Context, data consumeData) error
+	transformData(msg message.Message) (consumeData, error)
 }
 
 func newBaseConsumer(consumer consumer.Consumer, consumerHandler ConsumerHandler) *baseConsumer {

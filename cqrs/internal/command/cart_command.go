@@ -27,8 +27,8 @@ type CartUpdatedCommand struct {
 type CartUpdatedAction int
 
 const (
-	CartUpdatedActionAdd CartUpdatedAction = iota
-	CartUpdatedActionSub
+	CartAddItem CartUpdatedAction = iota
+	CartSubItem
 )
 
 type CartUpdatedDetial struct {

@@ -7,7 +7,7 @@ import (
 
 	"github.com/RoyceAzure/lab/cqrs/internal/event"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/redis_repo"
-	"github.com/RoyceAzure/lab/rj_redis/pkg/cache"
+	"github.com/redis/go-redis/v9"
 )
 
 type HandlerError error
@@ -29,20 +29,23 @@ type Handler interface {
 
 type HandlerDispatcher struct {
 	handlers   map[event.EventType]Handler
-	eventCache cache.Cache
+	eventCache *redis.Client
 }
 
-func NewHandlerDispatcher(handlers map[event.EventType]Handler, eventCache cache.Cache) *HandlerDispatcher {
+func NewHandlerDispatcher(handlers map[event.EventType]Handler, eventCache *redis.Client) *HandlerDispatcher {
 	return &HandlerDispatcher{handlers: handlers, eventCache: eventCache}
 }
 
 func (d *HandlerDispatcher) HandleEvent(ctx context.Context, evt event.Event) error {
 	// 檢查事件是否已經處理過
-	eventKey := fmt.Sprintf("%s:%s", evt.Type(), evt.GetID())
-	_, err := d.eventCache.Get(ctx, eventKey)
-	if err != nil {
-		return err
+	if d.eventCache != nil {
+		eventKey := fmt.Sprintf("%s:%s", evt.Type(), evt.GetID())
+		_, err := d.eventCache.Get(ctx, eventKey).Result()
+		if err != nil && err != redis.Nil {
+			return err
+		}
 	}
+
 	handler, ok := d.handlers[evt.Type()]
 	if !ok {
 		return errHandlerNotFound

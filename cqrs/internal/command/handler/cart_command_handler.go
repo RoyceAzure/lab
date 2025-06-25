@@ -37,6 +37,25 @@ func newCartCommandHandler(userService *service.UserService, productService *ser
 	return &cartCommandHandler{userService: userService, productService: productService, kafkaProducer: kafkaProducer}
 }
 
+// 通用的事件消息準備函數
+func prepareEventMessage(userID int, eventType event.EventType, payload interface{}) (message.Message, error) {
+	eventBytes, err := json.Marshal(payload)
+	if err != nil {
+		return message.Message{}, err
+	}
+
+	return message.Message{
+		Key:   []byte(strconv.Itoa(userID)),
+		Value: eventBytes,
+		Headers: []message.Header{
+			{
+				Key:   "event_type",
+				Value: []byte(eventType),
+			},
+		},
+	}, nil
+}
+
 // 驗證命令
 // 強一致性處理庫存狀態，一個商品同時間只有一個thread處理
 // 購物車Connand 使用delta 處理庫存，所以需要處理冪等(已經由HandlerDispatcher處理)
@@ -114,36 +133,26 @@ func (h *cartCommandHandler) produceCartFailedEvent(ctx context.Context, userID 
 }
 
 func prepareCartEventMessage(userID int, orderItems []model.OrderItemData) (message.Message, error) {
-	eventID := uuid.New().String()
-	eventBytes, err := json.Marshal(event.CartCreatedEvent{
+	return prepareEventMessage(userID, event.CartCreatedEventName, event.CartCreatedEvent{
 		BaseEvent: event.BaseEvent{
-			EventID:     eventID,
+			EventID:     uuid.New().String(),
 			AggregateID: generateCartAggregateID(userID),
 			EventType:   event.CartCreatedEventName,
 		},
 		UserID: userID,
 		Items:  orderItems,
 	})
-	return message.Message{
-		Key:   []byte(strconv.Itoa(userID)),
-		Value: eventBytes,
-	}, err
 }
 
 func prepareCartFailedEventMessage(userID int, errs ...error) (message.Message, error) {
-	eventID := uuid.New().String()
-	eventBytes, err := json.Marshal(event.CartFailedEvent{
+	return prepareEventMessage(userID, event.CartFailedEventName, event.CartFailedEvent{
 		BaseEvent: event.BaseEvent{
-			EventID:     eventID,
+			EventID:     uuid.New().String(),
 			AggregateID: generateCartAggregateID(userID),
 			EventType:   event.CartFailedEventName,
 		},
 		Message: errors.Join(errs...).Error(),
 	})
-	return message.Message{
-		Key:   []byte(strconv.Itoa(userID)),
-		Value: eventBytes,
-	}, err
 }
 
 // 驗證命令
@@ -162,34 +171,28 @@ func (h *cartCommandHandler) HandleCartUpdated(ctx context.Context, cmd command.
 		return err
 	}
 
-	var (
-		errsOrderItem []error
-	)
-
 	//主要庫存處理事件，同步處理庫存
 	//庫存個別檢查，個別處理，避免一個商品庫存不足，導致整個購物車失敗
 	for _, item := range c.Details {
 		switch item.Action {
-		case command.CartUpdatedActionAdd:
+		case command.CartAddItem:
 			// 扣庫存
 			err = h.productService.SubProductStock(ctx, item.ProductID, uint(item.Quantity))
 			if err != nil {
-				errsOrderItem = append(errsOrderItem, err)
-				continue
+				go h.produceCartFailedEvent(ctx, user.UserID, err)
+			} else {
+				go h.produceCartUpdatedEvent(ctx, user.UserID, c.Details)
 			}
-		case command.CartUpdatedActionSub:
+		case command.CartSubItem:
 			// 加庫存
 			err = h.productService.AddProductStock(ctx, item.ProductID, uint(item.Quantity))
 			if err != nil {
-				errsOrderItem = append(errsOrderItem, err)
-				continue
+				go h.produceCartFailedEvent(ctx, user.UserID, err)
+			} else {
+				go h.produceCartUpdatedEvent(ctx, user.UserID, c.Details)
 			}
 		}
 	}
-
-	//次要事件發布，有錯誤會記錄，交由後續程序處理
-	go h.produceCartUpdatedEvent(ctx, user.UserID, c.Details)
-	go h.produceCartFailedEvent(ctx, user.UserID, errsOrderItem...)
 
 	return nil
 }
@@ -210,21 +213,15 @@ func (h *cartCommandHandler) produceCartUpdatedEvent(ctx context.Context, userID
 }
 
 func prepareCartUpdatedEventMessage(userID int, details []command.CartUpdatedDetial) (message.Message, error) {
-	eventID := uuid.New().String()
-	eventBytes, err := json.Marshal(event.CartUpdatedEvent{
+	return prepareEventMessage(userID, event.CartUpdatedEventName, event.CartUpdatedEvent{
 		BaseEvent: event.BaseEvent{
-			EventID:     eventID,
+			EventID:     uuid.New().String(),
 			AggregateID: generateCartAggregateID(userID),
 			EventType:   event.CartUpdatedEventName,
 		},
 		UserID:  userID,
 		Details: details,
 	})
-
-	return message.Message{
-		Key:   []byte(strconv.Itoa(userID)),
-		Value: eventBytes,
-	}, err
 }
 
 // 購物車確認-> 進入訂單狀態後 會刪除購物車
@@ -260,19 +257,14 @@ func (h *cartCommandHandler) produceCartDeletedEvent(ctx context.Context, userID
 }
 
 func prepareCartDeletedEventMessage(userID int) (message.Message, error) {
-	eventID := uuid.New().String()
-	eventBytes, err := json.Marshal(event.CartDeletedEvent{
+	return prepareEventMessage(userID, event.CartDeletedEventName, event.CartDeletedEvent{
 		BaseEvent: event.BaseEvent{
-			EventID:     eventID,
+			EventID:     uuid.New().String(),
 			AggregateID: generateCartAggregateID(userID),
 			EventType:   event.CartDeletedEventName,
 		},
 		UserID: userID,
 	})
-	return message.Message{
-		Key:   []byte(strconv.Itoa(userID)),
-		Value: eventBytes,
-	}, err
 }
 
 func generateCartAggregateID(userID int) string {

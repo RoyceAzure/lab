@@ -131,9 +131,9 @@ func (s *ProductRepo) DeductProductStock(ctx context.Context, productID string, 
 
 	switch {
 	case resultInt == -1:
-		return 0, ErrProductNotFound
+		return 0, fmt.Errorf("product with id %s not found", productID)
 	case resultInt == 0:
-		return 0, ErrProductStockNotEnough
+		return 0, fmt.Errorf("product with id %s stock not enough", productID)
 	default:
 		return resultInt, nil // 返回扣減後的庫存
 	}

@@ -74,9 +74,9 @@ func (h *cartEventHandler) HandleCartUpdated(ctx context.Context, evt event.Even
 	for _, detail := range e.Details {
 		var quantity int
 		switch detail.Action {
-		case command.CartUpdatedActionAdd:
+		case command.CartAddItem:
 			quantity = detail.Quantity
-		case command.CartUpdatedActionSub:
+		case command.CartSubItem:
 			quantity = -detail.Quantity
 		}
 		err := h.cartRepo.Add(ctx, e.UserID, detail.ProductID, quantity)

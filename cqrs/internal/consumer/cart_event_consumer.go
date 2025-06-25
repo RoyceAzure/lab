@@ -2,6 +2,7 @@ package consumer
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/RoyceAzure/lab/cqrs/internal/event"
 	event_handler "github.com/RoyceAzure/lab/cqrs/internal/event/handler"
@@ -10,47 +11,54 @@ import (
 )
 
 type CartEventConsumer struct {
-	*eventHandlerAdapter
+	*handlerAdapter
 }
 
 func NewCartEventConsumer(consumer consumer.Consumer, cartEventHandler event_handler.Handler) IBaseConsumer {
-	return newBaseConsumer(consumer, &CartEventConsumer{newEventHandlerAdapter(cartEventHandler)})
+	return newBaseConsumer(consumer, &CartEventConsumer{newHandlerAdapter(nil, cartEventHandler)})
 }
 
-func (c *CartEventConsumer) transformData(msg message.Message) (ConsumeData, error) {
+func (c *CartEventConsumer) transformData(msg message.Message) (consumeData, error) {
 	headers := msg.Headers
 	var eventType event.EventType
 	for _, header := range headers {
 		if header.Key == "event_type" {
-			err := json.Unmarshal(header.Value, &eventType)
-			if err != nil {
-				return nil, err
-			}
+			eventType = event.EventType(header.Value)
 			break
 		}
 	}
 
 	var evt event.Event
+	var zero consumeData
 	switch eventType {
 	case event.CartCreatedEventName:
 		evt = &event.CartCreatedEvent{}
 		err := json.Unmarshal(msg.Value, &evt)
 		if err != nil {
-			return nil, err
+			return zero, err
 		}
 	case event.CartUpdatedEventName:
 		evt = &event.CartUpdatedEvent{}
 		err := json.Unmarshal(msg.Value, &evt)
 		if err != nil {
-			return nil, err
+			return zero, err
 		}
 	case event.CartDeletedEventName:
 		evt = &event.CartDeletedEvent{}
 		err := json.Unmarshal(msg.Value, &evt)
 		if err != nil {
-			return nil, err
+			return zero, err
 		}
+	case event.CartFailedEventName:
+		evt = &event.CartFailedEvent{}
+		err := json.Unmarshal(msg.Value, &evt)
+		if err != nil {
+			return zero, err
+		}
+	default:
+		fmt.Printf("unknown event type: %s", eventType)
+		return zero, ErrUnknownEventFormat
 	}
 
-	return newEventToConsumeDataAdapter(evt), nil
+	return consumeData{nil, evt}, nil
 }

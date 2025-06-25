@@ -10,47 +10,47 @@ import (
 )
 
 type CartCommandConsumer struct {
-	*commandHandlerAdapter
+	*handlerAdapter
 }
 
 func NewCartCommandConsumer(consumer consumer.Consumer, commandHandler handler.Handler) IBaseConsumer {
-	return newBaseConsumer(consumer, &CartCommandConsumer{newCommandHandlerAdapter(commandHandler)})
+	return newBaseConsumer(consumer, &CartCommandConsumer{newHandlerAdapter(commandHandler, nil)})
 }
 
-func (c *CartCommandConsumer) transformData(msg message.Message) (ConsumeData, error) {
+func (c *CartCommandConsumer) transformData(msg message.Message) (consumeData, error) {
 	headers := msg.Headers
 	var commandType command.CommandType
 	for _, header := range headers {
 		if header.Key == "command_type" {
-			err := json.Unmarshal(header.Value, &commandType)
-			if err != nil {
-				return nil, err
-			}
+			commandType = command.CommandType(header.Value)
 			break
 		}
 	}
 
 	var cmd command.Command
+	var zero consumeData
 	switch commandType {
 	case command.CartCreatedCommandName:
 		cmd = &command.CartCreatedCommand{}
 		err := json.Unmarshal(msg.Value, &cmd)
 		if err != nil {
-			return nil, err
+			return zero, err
 		}
 	case command.CartUpdatedCommandName:
 		cmd = &command.CartUpdatedCommand{}
 		err := json.Unmarshal(msg.Value, &cmd)
 		if err != nil {
-			return nil, err
+			return zero, err
 		}
 	case command.CartDeletedCommandName:
 		cmd = &command.CartDeletedCommand{}
 		err := json.Unmarshal(msg.Value, &cmd)
 		if err != nil {
-			return nil, err
+			return zero, err
 		}
+	default:
+		return zero, ErrUnknownCommandFormat
 	}
 
-	return newCommandToConsumeDataAdapter(cmd), nil
+	return consumeData{cmd, nil}, nil
 }
