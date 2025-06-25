@@ -2,12 +2,17 @@ package redis_repo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db/model"
 	"github.com/redis/go-redis/v9"
 )
+
+type CartRepoError error
+
+var ErrInsufficientQuantity CartRepoError = errors.New("insufficient quantity")
 
 type CartRepo struct {
 	CartCache *redis.Client
@@ -93,8 +98,8 @@ func (r *CartRepo) Get(ctx context.Context, userID int) (*model.Cart, error) {
 	return cart, nil
 }
 
-// Add 更新購物車中的 OrderItems（支援 delta 增減）
-func (r *CartRepo) Add(ctx context.Context, userID int, productID string, deltaQuantity int) error {
+// Delta 更新購物車中的 OrderItems（支援 delta 增減）
+func (r *CartRepo) Delta(ctx context.Context, userID int, productID string, deltaQuantity int) error {
 	itemsKey := generateCartItemKey(userID)
 
 	// 使用 Lua 腳本執行原子增減
@@ -102,23 +107,42 @@ func (r *CartRepo) Add(ctx context.Context, userID int, productID string, deltaQ
 		local key = KEYS[1]
 		local product_id = ARGV[1]
 		local delta = tonumber(ARGV[2])
-		local current = tonumber(redis.call('HGET', key, product_id) or 0)
-		local new_quantity = current + delta
-		if new_quantity <= 0 then
-			redis.call('HDEL', key, product_id)
-		else
-			redis.call('HSET', key, product_id, new_quantity)
+		
+		-- 如果是扣減操作，先檢查數量是否足夠
+		if delta < 0 then
+			local current = tonumber(redis.call('HGET', key, product_id) or "0")
+			if current + delta < 0 then
+				return -2  -- 商品數量不足
+			end
+			-- 如果扣減後剛好為 0，直接刪除
+			if current == -delta then
+				redis.call('HDEL', key, product_id)
+				return 0
+			end
 		end
-		return new_quantity
+
+		-- 使用 HINCRBY 進行原子增減
+		return redis.call('HINCRBY', key, product_id, delta)
 	`
-	_, err := r.CartCache.Eval(ctx, luaScript, []string{itemsKey}, productID, deltaQuantity).Result()
+
+	result, err := r.CartCache.Eval(ctx, luaScript, []string{itemsKey}, productID, deltaQuantity).Result()
 	if err == redis.Nil {
-		return fmt.Errorf("cart %d not found", userID)
+		return fmt.Errorf("failed to execute cart operation")
 	}
 	if err != nil {
 		return fmt.Errorf("failed to add item to cart: %w", err)
 	}
-	return nil
+
+	// 處理返回值
+	switch v := result.(type) {
+	case int64:
+		if v == -2 {
+			return fmt.Errorf("%w product %s", ErrInsufficientQuantity, productID)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unexpected result type: %T", result)
+	}
 }
 
 // Delete 從購物車中刪除指定商品

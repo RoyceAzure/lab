@@ -79,7 +79,7 @@ func (h *cartEventHandler) HandleCartUpdated(ctx context.Context, evt event.Even
 		case command.CartSubItem:
 			quantity = -detail.Quantity
 		}
-		err := h.cartRepo.Add(ctx, e.UserID, detail.ProductID, quantity)
+		err := h.cartRepo.Delta(ctx, e.UserID, detail.ProductID, quantity)
 		if err != nil {
 			return err
 		}
