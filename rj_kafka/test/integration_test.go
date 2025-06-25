@@ -625,7 +625,13 @@ func TestConcurrentProducerConsumers(t *testing.T) {
 	}
 
 	// 收集所有消費者收到的訊息
-	receivedMessages := make(map[string]bool)
+	type MessageInfo struct {
+		Count         int       // 接收次數
+		FirstReceived time.Time // 第一次接收時間
+		LastReceived  time.Time // 最後一次接收時間
+		ConsumerIDs   []int     // 哪些消費者接收到了這個訊息
+	}
+	receivedMessages := make(map[string]*MessageInfo)
 	var receivedMutex sync.Mutex
 	var consumerWg sync.WaitGroup
 	messageReceived := make(chan struct{})
@@ -640,7 +646,19 @@ func TestConcurrentProducerConsumers(t *testing.T) {
 				case msg := <-msgChans[consumerIndex]:
 					receivedMutex.Lock()
 					key := fmt.Sprintf("%s-%s", string(msg.Key), string(msg.Value))
-					receivedMessages[key] = true
+					if info, exists := receivedMessages[key]; exists {
+						info.Count++
+						info.LastReceived = time.Now()
+						info.ConsumerIDs = append(info.ConsumerIDs, consumerIndex)
+						t.Logf("警告：訊息被重複接收 - Key: %s, Consumer: %d, 總接收次數: %d", key, consumerIndex, info.Count)
+					} else {
+						receivedMessages[key] = &MessageInfo{
+							Count:         1,
+							FirstReceived: time.Now(),
+							LastReceived:  time.Now(),
+							ConsumerIDs:   []int{consumerIndex},
+						}
+					}
 					if len(receivedMessages) == messageCount {
 						close(messageReceived)
 					}
@@ -669,11 +687,32 @@ func TestConcurrentProducerConsumers(t *testing.T) {
 	// 驗證結果
 	assert.Equal(t, messageCount, len(receivedMessages), "接收到的訊息數量不符合預期")
 
-	// 驗證每個訊息都有被接收到
+	// 驗證每個訊息都有被接收到，且只被接收一次
+	duplicateCount := 0
+	missingCount := 0
 	for _, msg := range testMessages {
 		key := fmt.Sprintf("%s-%s", string(msg.Key), string(msg.Value))
-		assert.True(t, receivedMessages[key], "訊息未被接收: %s", key)
+		if info, exists := receivedMessages[key]; exists {
+			if info.Count > 1 {
+				duplicateCount++
+				t.Logf("訊息重複接收 - Key: %s, 接收次數: %d, 接收者: %v, 首次接收: %v, 最後接收: %v",
+					key, info.Count, info.ConsumerIDs, info.FirstReceived, info.LastReceived)
+			}
+		} else {
+			missingCount++
+			t.Logf("訊息未被接收: %s", key)
+		}
 	}
 
-	t.Log("測試完成，所有訊息都已正確接收")
+	// 最終統計
+	t.Logf("測試統計：")
+	t.Logf("- 總訊息數: %d", messageCount)
+	t.Logf("- 重複接收的訊息數: %d", duplicateCount)
+	t.Logf("- 遺失的訊息數: %d", missingCount)
+
+	// 驗證沒有重複接收和遺失的訊息
+	assert.Equal(t, 0, duplicateCount, "有訊息被重複接收")
+	assert.Equal(t, 0, missingCount, "有訊息遺失")
+
+	t.Log("測試完成，所有訊息都已正確接收且無重複")
 }
