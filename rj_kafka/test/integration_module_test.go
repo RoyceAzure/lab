@@ -27,6 +27,8 @@ func TestProducerConsumerModule(t *testing.T) {
 		ConsumerMinBytes: 1,
 		ConsumerMaxBytes: 10e6,
 		ConsumerMaxWait:  time.Second,
+		ReadTimeout:      5 * time.Second,
+		WriteTimeout:     5 * time.Second,
 	}
 
 	// 創建 producer
@@ -56,7 +58,7 @@ func TestProducerConsumerModule(t *testing.T) {
 	defer cancel()
 
 	// 開始消費消息
-	msgChan, errChan, err := c.Consume(ctxTimeout)
+	msgChan, errChan, err := c.Consume()
 	assert.NoError(t, err, "Should consume messages")
 
 	// 讀取並驗證消息
@@ -70,7 +72,7 @@ func TestProducerConsumerModule(t *testing.T) {
 			receivedMsgs = append(receivedMsgs, msg)
 
 			// 提交消息
-			err := c.CommitMessages(ctx, msg)
+			err := c.CommitMessages(msg)
 			assert.NoError(t, err, "Should commit message")
 
 		case err := <-errChan:

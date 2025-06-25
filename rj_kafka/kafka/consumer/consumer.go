@@ -33,8 +33,8 @@ func (e *ConsumerError) Error() string {
 
 // Consumer interface defines the methods that a Kafka consumer must implement
 type Consumer interface {
-	Consume(ctx context.Context) (<-chan message.Message, <-chan error, error)
-	CommitMessages(ctx context.Context, msgs ...message.Message) error
+	Consume() (<-chan message.Message, <-chan error, error)
+	CommitMessages(msgs ...message.Message) error
 	Close() error
 }
 
@@ -121,7 +121,7 @@ func (c *kafkaConsumer) shouldReportError(err error) bool {
 }
 
 // Consume implements the Consumer interface
-func (c *kafkaConsumer) Consume(ctx context.Context) (<-chan message.Message, <-chan error, error) {
+func (c *kafkaConsumer) Consume() (<-chan message.Message, <-chan error, error) {
 	// 檢查是否已關閉
 	if c.closed.Load() {
 		return nil, nil, errors.ErrClientClosed
@@ -132,16 +132,19 @@ func (c *kafkaConsumer) Consume(ctx context.Context) (<-chan message.Message, <-
 		return nil, nil, errors.ErrConsumerAlreadyRunning
 	}
 
-	go c.consumeLoop(ctx)
+	go c.consumeLoop()
 
 	return c.msgCh, c.errCh, nil
 }
 
 // consumeLoop 處理消費循環
-func (c *kafkaConsumer) consumeLoop(ctx context.Context) {
+func (c *kafkaConsumer) consumeLoop() {
 	defer func() {
 		c.consuming.Store(false)
 		if r := recover(); r != nil {
+			if c.closed.Load() {
+				return
+			}
 			c.errCh <- &ConsumerError{
 				Fatal: true,
 				Err:   fmt.Errorf("consumer panic: %v", r),
@@ -154,6 +157,9 @@ func (c *kafkaConsumer) consumeLoop(ctx context.Context) {
 		if c.closed.Load() {
 			return
 		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), c.cfg.ReadTimeout)
+		defer cancel()
 
 		msg, err := c.reader.ReadMessage(ctx)
 		if c.closed.Load() {
@@ -194,7 +200,7 @@ func (c *kafkaConsumer) consumeLoop(ctx context.Context) {
 }
 
 // CommitMessages implements the Consumer interface
-func (c *kafkaConsumer) CommitMessages(ctx context.Context, msgs ...message.Message) error {
+func (c *kafkaConsumer) CommitMessages(msgs ...message.Message) error {
 	if c.closed.Load() {
 		return errors.ErrClientClosed
 	}
@@ -203,6 +209,9 @@ func (c *kafkaConsumer) CommitMessages(ctx context.Context, msgs ...message.Mess
 	for i, msg := range msgs {
 		kafkaMsgs[i] = msg.ToKafkaMessage()
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.WriteTimeout)
+	defer cancel()
 
 	err := c.reader.CommitMessages(ctx, kafkaMsgs...)
 	if err != nil {
@@ -222,9 +231,10 @@ func (c *kafkaConsumer) close() error {
 		return nil
 	}
 	c.consuming.Store(false)
+	err := c.reader.Close()
 	close(c.msgCh)
 	close(c.errCh)
-	return c.reader.Close()
+	return err
 }
 
 func (c *kafkaConsumer) Close() error {

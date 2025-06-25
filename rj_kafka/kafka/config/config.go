@@ -3,6 +3,8 @@ package config
 import (
 	"errors"
 	"time"
+
+	"github.com/segmentio/kafka-go"
 )
 
 var (
@@ -22,6 +24,7 @@ type Config struct {
 	ConsumerMaxBytes int
 	ConsumerMaxWait  time.Duration
 	CommitInterval   time.Duration
+	Partition        int
 
 	// 生產者配置
 	BatchSize     int
@@ -41,6 +44,18 @@ type Config struct {
 	RetryBackoffFactor float64       `yaml:"retry_backoff_factor"` // 重試間隔增長因子
 	AutoResetOffset    bool          `yaml:"auto_reset_offset"`    // 重連後是否重設 offset
 	ReconnectWaitTime  time.Duration `yaml:"reconnect_wait_time"`  // 重連等待時間
+
+	// 分區策略配置
+	Balancer kafka.Balancer // 自定義負載平衡器
+}
+
+// GetBalancer 取得負載平衡器，如果沒有設定則使用預設的 LeastBytes
+func (c *Config) GetBalancer() kafka.Balancer {
+	if c.Balancer != nil {
+		return c.Balancer
+	}
+	// 預設使用 LeastBytes
+	return &kafka.LeastBytes{}
 }
 
 // DefaultConfig returns a Config with default settings
@@ -71,21 +86,7 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-func (c *Config) setDefaults() {
-	// 設置重連相關的默認值
-	if c.MaxRetryAttempts == 0 {
-		c.MaxRetryAttempts = 5
-	}
-	if c.RetryBackoffMin == 0 {
-		c.RetryBackoffMin = time.Second
-	}
-	if c.RetryBackoffMax == 0 {
-		c.RetryBackoffMax = 30 * time.Second
-	}
-	if c.RetryBackoffFactor == 0 {
-		c.RetryBackoffFactor = 2.0
-	}
-	if c.ReconnectWaitTime == 0 {
-		c.ReconnectWaitTime = 5 * time.Second
-	}
+// GetBatchTimeout returns the BatchTimeout if set, otherwise returns a default value
+func GetDefaultBatchTimeout() time.Duration {
+	return 1 * time.Second
 }

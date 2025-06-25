@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/RoyceAzure/lab/rj_redis/pkg/cache"
-	redis_cache "github.com/RoyceAzure/lab/rj_redis/pkg/cache/redis"
 	"github.com/RoyceAzure/lab/rj_redis/pkg/redis_client"
 	"github.com/stretchr/testify/require"
 )
@@ -16,7 +15,7 @@ import (
 func setupBenchmark(b *testing.B) (cache.Cache, context.Context) {
 	redisClient, err := redis_client.GetRedisClient(testRedisAddr, redis_client.WithPassword(testRedisPassword))
 	require.NoError(b, err)
-	cache := redis_cache.NewRedisCache(redisClient, "benchmark_hash")
+	cache := cache.NewRedisCache(redisClient, "benchmark_hash")
 	ctx := context.Background()
 
 	// 清理測試數據

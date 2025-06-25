@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"sync/atomic"
-	"time"
 
 	"github.com/segmentio/kafka-go"
 
@@ -14,6 +13,7 @@ import (
 )
 
 // Producer interface defines the methods that a Kafka producer must implement
+// 生產者會寫入到固定topic，由config.Config設置
 type Producer interface {
 	// Produce sends messages to Kafka
 	Produce(ctx context.Context, msgs []message.Message) error
@@ -36,11 +36,11 @@ func New(cfg *config.Config) (Producer, error) {
 
 	writer := &kafka.Writer{
 		Addr:         kafka.TCP(cfg.Brokers...),
+		Balancer:     cfg.Balancer,
 		Topic:        cfg.Topic,
-		Balancer:     &kafka.LeastBytes{},
 		BatchSize:    cfg.BatchSize,
 		BatchTimeout: cfg.BatchTimeout,
-		WriteTimeout: 5 * time.Second, // 添加寫入超時
+		WriteTimeout: cfg.WriteTimeout,
 		MaxAttempts:  cfg.RetryAttempts,
 		Async:        false,
 		RequiredAcks: kafka.RequiredAcks(cfg.RequiredAcks),
