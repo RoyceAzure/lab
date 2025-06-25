@@ -45,14 +45,16 @@ type kafkaConsumer struct {
 	reader    *kafka.Reader
 	cfg       *config.Config
 	closed    atomic.Bool          // 控制是否已關閉
-	consuming atomic.Bool          // 控制是否正在消費
+	consuming atomic.Bool          // 控制是否正在消費循環，當消費循環結束後，會設置為false
 	msgCh     chan message.Message //回傳訊息channel
 	errCh     chan error           //回傳錯誤channel
 
 	// 錯誤聚合
-	lastError     atomic.Value // 最後一次錯誤
-	errorCount    atomic.Int32 // 相同錯誤的次數
-	lastErrorTime atomic.Value // 最後一次錯誤的時間
+	lastError       atomic.Value // 最後一次錯誤
+	errorCount      atomic.Int32 // 相同錯誤的次數
+	lastErrorTime   atomic.Value // 最後一次錯誤的時間
+	consumingCtx    context.Context
+	consumingCancel context.CancelFunc
 }
 
 // New creates a new Kafka consumer
@@ -140,6 +142,7 @@ func (c *kafkaConsumer) Consume() (<-chan message.Message, <-chan error, error) 
 // consumeLoop 處理消費循環
 func (c *kafkaConsumer) consumeLoop() {
 	defer func() {
+		//consuming設為false 表示消費循環結束
 		c.consuming.Store(false)
 		if r := recover(); r != nil {
 			if c.closed.Load() {
@@ -152,20 +155,18 @@ func (c *kafkaConsumer) consumeLoop() {
 		}
 	}()
 
+	//每次消費循環開始，設置新的context
+	c.consumingCtx, c.consumingCancel = context.WithCancel(context.Background())
+
 	log.Println("consumeLoop start")
 	for {
 		if c.closed.Load() {
 			return
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), c.cfg.ReadTimeout)
-		defer cancel()
-
-		msg, err := c.reader.ReadMessage(ctx)
-		if c.closed.Load() {
-			return
-		}
-
+		//沒有訊息會自己block
+		msg, err := c.reader.ReadMessage(c.consumingCtx)
+		//若有讀取到消息，則要完整處理完，才回應關閉事件
 		if err != nil {
 			// 處理錯誤
 			kafkaErr := errors.NewKafkaError("Consume", c.cfg.Topic, err)
@@ -190,12 +191,15 @@ func (c *kafkaConsumer) consumeLoop() {
 				time.Sleep(c.cfg.RetryBackoffMin)
 				continue
 			}
-
-			continue
 		}
 
-		// 成功讀取消息，發送到消息通道
-		c.msgCh <- message.FromKafkaMessage(msg)
+		if err == nil {
+			c.msgCh <- message.FromKafkaMessage(msg)
+		}
+
+		if c.closed.Load() {
+			return
+		}
 	}
 }
 
@@ -230,7 +234,31 @@ func (c *kafkaConsumer) close() error {
 	if !c.closed.CompareAndSwap(false, true) {
 		return nil
 	}
-	c.consuming.Store(false)
+	log.Println("closing consumer, waiting for consumer loop to complete...")
+
+	// 取消消費循環
+	c.consumingCancel()
+
+	// 等待消費迴圈結束
+	timeout := time.After(10 * time.Second)
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+waitLoop:
+	for {
+		select {
+		case <-timeout:
+			log.Println("timeout waiting for consumer loop to complete")
+			break waitLoop
+		case <-ticker.C:
+			if !c.consuming.Load() {
+				log.Println("consumer loop completed naturally")
+				break waitLoop
+			}
+		}
+	}
+
+	log.Println("closing consumer resources...")
 	err := c.reader.Close()
 	close(c.msgCh)
 	close(c.errCh)

@@ -548,3 +548,132 @@ func TestProducerConsumerWithProductIDBalancer(t *testing.T) {
 	}
 	printMessages(t, receivedMessages, sendMessages)
 }
+
+func TestConcurrentProducerConsumers(t *testing.T) {
+	cleanup := setupTest(t)
+	defer cleanup()
+
+	// 配置
+	cfg := &config.Config{
+		Brokers:        testClusterConfig.Cluster.Brokers,
+		Topic:          testClusterConfig.Topics[0].Name,
+		ConsumerGroup:  fmt.Sprintf("test-concurrent-group-%s-%d", t.Name(), time.Now().UnixNano()),
+		RetryAttempts:  3,
+		BatchTimeout:   time.Second,
+		BatchSize:      1,
+		RequiredAcks:   1,
+		CommitInterval: time.Second,
+		ReadTimeout:    5 * time.Second,
+		WriteTimeout:   5 * time.Second,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// 建立一個 producer
+	p, err := producer.New(cfg)
+	assert.NoError(t, err)
+	defer p.Close()
+
+	// 建立多個消費者
+	consumerCount := 3
+	consumers := make([]consumer.Consumer, consumerCount)
+	msgChans := make([]<-chan message.Message, consumerCount)
+	errChans := make([]<-chan error, consumerCount)
+
+	for i := 0; i < consumerCount; i++ {
+		consumers[i], err = consumer.New(cfg)
+		assert.NoError(t, err)
+
+		msgChans[i], errChans[i], err = consumers[i].Consume()
+		assert.NoError(t, err)
+	}
+
+	// 準備測試訊息
+	messageCount := 2000
+	testMessages := make([]message.Message, messageCount)
+	for i := 0; i < messageCount; i++ {
+		testMessages[i] = message.Message{
+			Key:   []byte(fmt.Sprintf("key-%d", i)),
+			Value: []byte(fmt.Sprintf("value-%d", i)),
+			Headers: []message.Header{
+				{
+					Key:   "index",
+					Value: []byte(fmt.Sprintf("%d", i)),
+				},
+			},
+		}
+	}
+
+	// 將訊息分配給多個 goroutine 發送
+	goroutineCount := 20
+	messagesPerGoroutine := messageCount / goroutineCount
+	var producerWg sync.WaitGroup
+
+	for i := 0; i < goroutineCount; i++ {
+		producerWg.Add(1)
+		go func(startIdx int) {
+			defer producerWg.Done()
+			endIdx := startIdx + messagesPerGoroutine
+			if endIdx > messageCount {
+				endIdx = messageCount
+			}
+			messages := testMessages[startIdx:endIdx]
+			err := p.Produce(ctx, messages)
+			assert.NoError(t, err)
+		}(i * messagesPerGoroutine)
+	}
+
+	// 收集所有消費者收到的訊息
+	receivedMessages := make(map[string]bool)
+	var receivedMutex sync.Mutex
+	var consumerWg sync.WaitGroup
+	messageReceived := make(chan struct{})
+
+	for i := 0; i < consumerCount; i++ {
+		consumerWg.Add(1)
+		go func(consumerIndex int) {
+			defer consumerWg.Done()
+			defer consumers[consumerIndex].Close()
+			for {
+				select {
+				case msg := <-msgChans[consumerIndex]:
+					receivedMutex.Lock()
+					key := fmt.Sprintf("%s-%s", string(msg.Key), string(msg.Value))
+					receivedMessages[key] = true
+					if len(receivedMessages) == messageCount {
+						close(messageReceived)
+					}
+					receivedMutex.Unlock()
+				case err := <-errChans[consumerIndex]:
+					t.Logf("Consumer %d error: %v", consumerIndex, err)
+				case <-ctx.Done():
+					return
+				}
+			}
+		}(i)
+	}
+
+	// 等待所有 producer goroutine 完成
+	producerWg.Wait()
+	t.Log("所有 producer goroutine 已完成發送")
+
+	// 等待接收完所有訊息或超時
+	select {
+	case <-messageReceived:
+		t.Log("已接收到所有訊息")
+	case <-time.After(30 * time.Second):
+		t.Fatal("等待接收訊息超時")
+	}
+
+	// 驗證結果
+	assert.Equal(t, messageCount, len(receivedMessages), "接收到的訊息數量不符合預期")
+
+	// 驗證每個訊息都有被接收到
+	for _, msg := range testMessages {
+		key := fmt.Sprintf("%s-%s", string(msg.Key), string(msg.Value))
+		assert.True(t, receivedMessages[key], "訊息未被接收: %s", key)
+	}
+
+	t.Log("測試完成，所有訊息都已正確接收")
+}
