@@ -5,8 +5,8 @@ import (
 
 	"github.com/RoyceAzure/lab/cqrs/internal/command"
 	"github.com/RoyceAzure/lab/cqrs/internal/event"
-	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db/model"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/redis_repo"
+	"github.com/RoyceAzure/lab/cqrs/internal/model"
 )
 
 // 處理cart 領域相關事件

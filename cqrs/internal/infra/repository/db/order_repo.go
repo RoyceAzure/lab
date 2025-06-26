@@ -1,7 +1,7 @@
 package db
 
 import (
-	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db/model"
+	"github.com/RoyceAzure/lab/cqrs/internal/model"
 )
 
 // 購物車階段 只會寫入到redis, 不會寫入到db，所有購物車資料都要去redis取

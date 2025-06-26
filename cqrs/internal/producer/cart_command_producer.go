@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/RoyceAzure/lab/cqrs/internal/command"
-	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db/model"
+	"github.com/RoyceAzure/lab/cqrs/internal/model"
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/message"
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/producer"
 )

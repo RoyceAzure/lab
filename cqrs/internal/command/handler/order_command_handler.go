@@ -9,8 +9,8 @@ import (
 	"github.com/RoyceAzure/lab/cqrs/internal/command"
 	"github.com/RoyceAzure/lab/cqrs/internal/event"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db"
-	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db/model"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/eventdb"
+	"github.com/RoyceAzure/lab/cqrs/internal/model"
 	"github.com/RoyceAzure/lab/cqrs/internal/service"
 	"github.com/google/uuid"
 )

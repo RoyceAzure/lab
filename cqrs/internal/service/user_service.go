@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db"
-	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db/model"
+	"github.com/RoyceAzure/lab/cqrs/internal/model"
 )
 
 var (

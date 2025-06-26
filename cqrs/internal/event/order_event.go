@@ -1,7 +1,7 @@
 package event
 
 import (
-	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db/model"
+	"github.com/RoyceAzure/lab/cqrs/internal/model"
 	"github.com/shopspring/decimal"
 )
 
