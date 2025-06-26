@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
+	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/redis_repo"
-	"github.com/RoyceAzure/lab/cqrs/internal/model"
 	"github.com/shopspring/decimal"
 )
 

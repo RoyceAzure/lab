@@ -1,17 +1,28 @@
-package event
+package model
 
 import (
-	"github.com/RoyceAzure/lab/cqrs/internal/model"
+	"time"
+
+	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
 	"github.com/shopspring/decimal"
 )
 
+type OrderAggregate struct {
+	OrderID    string
+	UserID     int
+	OrderItems []model.OrderItemData
+	Amount     decimal.Decimal
+	OrderDate  time.Time
+	State      uint
+	// 不需要 Version，EventStore 管理
+}
+
 type OrderCreatedEvent struct {
 	BaseEvent
-	OrderID string
-	UserID  int
-	Items   []model.OrderItemData
-	Amount  decimal.Decimal
-	State   uint
+	Items     []model.OrderItemData
+	Amount    decimal.Decimal
+	FromState uint
+	ToState   uint
 }
 
 func (e *OrderCreatedEvent) Type() EventType {
@@ -20,9 +31,8 @@ func (e *OrderCreatedEvent) Type() EventType {
 
 type OrderConfirmedEvent struct {
 	BaseEvent
-	OrderID string
-	UserID  int
-	State   uint
+	FromState uint
+	ToState   uint
 }
 
 func (e *OrderConfirmedEvent) Type() EventType {
@@ -31,11 +41,10 @@ func (e *OrderConfirmedEvent) Type() EventType {
 
 type OrderShippedEvent struct {
 	BaseEvent
-	OrderID      string
-	UserID       int
 	TrackingCode string // 物流追蹤號
 	Carrier      string // 物流商
-	State        uint
+	FromState    uint
+	ToState      uint
 }
 
 func (e *OrderShippedEvent) Type() EventType {
@@ -44,11 +53,10 @@ func (e *OrderShippedEvent) Type() EventType {
 
 type OrderCancelledEvent struct {
 	BaseEvent
-	OrderID string
-	UserID  int
-	Message string
-	Items   []model.OrderItemData
-	State   uint
+	Message   string
+	Items     []model.OrderItemData
+	FromState uint
+	ToState   uint
 }
 
 func (e *OrderCancelledEvent) Type() EventType {
@@ -57,10 +65,9 @@ func (e *OrderCancelledEvent) Type() EventType {
 
 type OrderRefundedEvent struct {
 	BaseEvent
-	OrderID string
-	UserID  int
-	Amount  decimal.Decimal
-	State   uint
+	Amount    decimal.Decimal
+	FromState uint
+	ToState   uint
 }
 
 func (e *OrderRefundedEvent) Type() EventType {

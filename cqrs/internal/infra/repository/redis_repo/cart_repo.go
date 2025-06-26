@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/RoyceAzure/lab/cqrs/internal/model"
+	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
 	"github.com/redis/go-redis/v9"
 )
 

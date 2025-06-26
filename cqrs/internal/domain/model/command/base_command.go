@@ -1,4 +1,4 @@
-package command
+package model
 
 type BaseCommand struct {
 	commandID string

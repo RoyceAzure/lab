@@ -5,10 +5,10 @@ import (
 	"errors"
 	"log"
 
-	"github.com/RoyceAzure/lab/cqrs/internal/command"
-	command_handler "github.com/RoyceAzure/lab/cqrs/internal/command/handler"
-	"github.com/RoyceAzure/lab/cqrs/internal/event"
-	event_handler "github.com/RoyceAzure/lab/cqrs/internal/event/handler"
+	cmd_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/command"
+	evt_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/event"
+	command_handler "github.com/RoyceAzure/lab/cqrs/internal/handler/command"
+	event_handler "github.com/RoyceAzure/lab/cqrs/internal/handler/event"
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/consumer"
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/message"
 )
@@ -41,8 +41,8 @@ func (a *handlerAdapter) Handle(ctx context.Context, data consumeData) error {
 
 // consumeData is a union of command and event
 type consumeData struct {
-	command command.Command
-	event   event.Event
+	command cmd_model.Command
+	event   evt_model.Event
 }
 
 func (d consumeData) IsCommand() bool {
@@ -53,11 +53,11 @@ func (d consumeData) IsEvent() bool {
 	return d.event != nil
 }
 
-func (d consumeData) Command() command.Command {
+func (d consumeData) Command() cmd_model.Command {
 	return d.command
 }
 
-func (d consumeData) Event() event.Event {
+func (d consumeData) Event() evt_model.Event {
 	return d.event
 }
 

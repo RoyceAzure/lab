@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/RoyceAzure/lab/cqrs/internal/model"
+	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
 	"github.com/RoyceAzure/lab/rj_redis/pkg/cache"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"

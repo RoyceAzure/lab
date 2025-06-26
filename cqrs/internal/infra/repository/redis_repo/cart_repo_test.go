@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RoyceAzure/lab/cqrs/internal/model"
+	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"

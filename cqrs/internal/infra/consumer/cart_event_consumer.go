@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/RoyceAzure/lab/cqrs/internal/event"
-	event_handler "github.com/RoyceAzure/lab/cqrs/internal/event/handler"
+	evt_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/event"
+	event_handler "github.com/RoyceAzure/lab/cqrs/internal/handler/event"
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/consumer"
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/message"
 )
@@ -20,37 +20,37 @@ func NewCartEventConsumer(consumer consumer.Consumer, cartEventHandler event_han
 
 func (c *CartEventConsumer) transformData(msg message.Message) (consumeData, error) {
 	headers := msg.Headers
-	var eventType event.EventType
+	var eventType evt_model.EventType
 	for _, header := range headers {
 		if header.Key == "event_type" {
-			eventType = event.EventType(header.Value)
+			eventType = evt_model.EventType(header.Value)
 			break
 		}
 	}
 
-	var evt event.Event
+	var evt evt_model.Event
 	var zero consumeData
 	switch eventType {
-	case event.CartCreatedEventName:
-		evt = &event.CartCreatedEvent{}
+	case evt_model.CartCreatedEventName:
+		evt = &evt_model.CartCreatedEvent{}
 		err := json.Unmarshal(msg.Value, &evt)
 		if err != nil {
 			return zero, err
 		}
-	case event.CartUpdatedEventName:
-		evt = &event.CartUpdatedEvent{}
+	case evt_model.CartUpdatedEventName:
+		evt = &evt_model.CartUpdatedEvent{}
 		err := json.Unmarshal(msg.Value, &evt)
 		if err != nil {
 			return zero, err
 		}
-	case event.CartDeletedEventName:
-		evt = &event.CartDeletedEvent{}
+	case evt_model.CartDeletedEventName:
+		evt = &evt_model.CartDeletedEvent{}
 		err := json.Unmarshal(msg.Value, &evt)
 		if err != nil {
 			return zero, err
 		}
-	case event.CartFailedEventName:
-		evt = &event.CartFailedEvent{}
+	case evt_model.CartFailedEventName:
+		evt = &evt_model.CartFailedEvent{}
 		err := json.Unmarshal(msg.Value, &evt)
 		if err != nil {
 			return zero, err

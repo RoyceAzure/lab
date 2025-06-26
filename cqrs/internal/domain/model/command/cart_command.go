@@ -1,6 +1,6 @@
-package command
+package model
 
-import "github.com/RoyceAzure/lab/cqrs/internal/model"
+import "github.com/RoyceAzure/lab/cqrs/internal/domain/model"
 
 const (
 	CartCreatedCommandName CommandType = "CartCreated"

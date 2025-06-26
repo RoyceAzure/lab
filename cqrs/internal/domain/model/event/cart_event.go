@@ -1,8 +1,8 @@
-package event
+package model
 
 import (
-	"github.com/RoyceAzure/lab/cqrs/internal/command"
-	"github.com/RoyceAzure/lab/cqrs/internal/model"
+	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
+	cmd_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/command"
 )
 
 type CartCreatedEvent struct {
@@ -28,7 +28,7 @@ func (e *CartFailedEvent) Type() EventType {
 type CartUpdatedEvent struct {
 	BaseEvent
 	UserID  int
-	Details []command.CartUpdatedDetial
+	Details []cmd_model.CartUpdatedDetial
 }
 
 func (e *CartUpdatedEvent) Type() EventType {

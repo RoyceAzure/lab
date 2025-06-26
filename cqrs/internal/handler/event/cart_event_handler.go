@@ -3,10 +3,10 @@ package handler
 import (
 	"context"
 
-	"github.com/RoyceAzure/lab/cqrs/internal/command"
-	"github.com/RoyceAzure/lab/cqrs/internal/event"
+	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
+	cmd_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/command"
+	evt_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/event"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/redis_repo"
-	"github.com/RoyceAzure/lab/cqrs/internal/model"
 )
 
 // 處理cart 領域相關事件
@@ -21,10 +21,10 @@ func newCartEventHandler(cartRepo *redis_repo.CartRepo) *cartEventHandler {
 
 // 處理CartCreatedEvent
 // 寫入redis cart 資料
-func (h *cartEventHandler) HandleCartCreated(ctx context.Context, evt event.Event) error {
-	var e *event.CartCreatedEvent
+func (h *cartEventHandler) HandleCartCreated(ctx context.Context, evt evt_model.Event) error {
+	var e *evt_model.CartCreatedEvent
 	var ok bool
-	if e, ok = evt.(*event.CartCreatedEvent); !ok {
+	if e, ok = evt.(*evt_model.CartCreatedEvent); !ok {
 		return errUnknownEventFormat
 	}
 
@@ -49,10 +49,10 @@ func (h *cartEventHandler) HandleCartCreated(ctx context.Context, evt event.Even
 	return nil
 }
 
-func (h *cartEventHandler) HandleCartFailed(ctx context.Context, evt event.Event) error {
-	var e *event.CartFailedEvent
+func (h *cartEventHandler) HandleCartFailed(ctx context.Context, evt evt_model.Event) error {
+	var e *evt_model.CartFailedEvent
 	var ok bool
-	if e, ok = evt.(*event.CartFailedEvent); !ok {
+	if e, ok = evt.(*evt_model.CartFailedEvent); !ok {
 		return errUnknownEventFormat
 	}
 
@@ -64,19 +64,19 @@ func (h *cartEventHandler) HandleCartFailed(ctx context.Context, evt event.Event
 	return nil
 }
 
-func (h *cartEventHandler) HandleCartUpdated(ctx context.Context, evt event.Event) error {
-	var e *event.CartUpdatedEvent
+func (h *cartEventHandler) HandleCartUpdated(ctx context.Context, evt evt_model.Event) error {
+	var e *evt_model.CartUpdatedEvent
 	var ok bool
-	if e, ok = evt.(*event.CartUpdatedEvent); !ok {
+	if e, ok = evt.(*evt_model.CartUpdatedEvent); !ok {
 		return errUnknownEventFormat
 	}
 
 	for _, detail := range e.Details {
 		var quantity int
 		switch detail.Action {
-		case command.CartAddItem:
+		case cmd_model.CartAddItem:
 			quantity = detail.Quantity
-		case command.CartSubItem:
+		case cmd_model.CartSubItem:
 			quantity = -detail.Quantity
 		}
 		err := h.cartRepo.Delta(ctx, e.UserID, detail.ProductID, quantity)
@@ -88,10 +88,10 @@ func (h *cartEventHandler) HandleCartUpdated(ctx context.Context, evt event.Even
 	return nil
 }
 
-func (h *cartEventHandler) HandleCartDeleted(ctx context.Context, evt event.Event) error {
-	var e *event.CartDeletedEvent
+func (h *cartEventHandler) HandleCartDeleted(ctx context.Context, evt evt_model.Event) error {
+	var e *evt_model.CartDeletedEvent
 	var ok bool
-	if e, ok = evt.(*event.CartDeletedEvent); !ok {
+	if e, ok = evt.(*evt_model.CartDeletedEvent); !ok {
 		return errUnknownEventFormat
 	}
 

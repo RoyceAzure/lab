@@ -3,12 +3,13 @@ package handler
 import (
 	"context"
 
-	"github.com/RoyceAzure/lab/cqrs/internal/event"
-	"github.com/RoyceAzure/lab/cqrs/internal/model"
+	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
+	evt_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/event"
 	"github.com/RoyceAzure/lab/cqrs/internal/service"
 )
 
-// 處理order 領域相關事件
+// 處理order事件
+// 儲存到eventdb  需要跟infra order eventdb
 type OrderEventHandler struct {
 	orderService *service.OrderService
 }
@@ -17,10 +18,10 @@ func NewOrderEventHandler(orderService *service.OrderService) *OrderEventHandler
 	return &OrderEventHandler{orderService: orderService}
 }
 
-func (h *OrderEventHandler) HandleOrderCreated(ctx context.Context, evt event.Event) error {
-	var e *event.OrderCreatedEvent
+func (h *OrderEventHandler) HandleOrderCreated(ctx context.Context, evt evt_model.Event) error {
+	var e *evt_model.OrderCreatedEvent
 	var ok bool
-	if e, ok = evt.(*event.OrderCreatedEvent); !ok {
+	if e, ok = evt.(*evt_model.OrderCreatedEvent); !ok {
 		return errUnknownEventFormat
 	}
 
@@ -33,9 +34,8 @@ func (h *OrderEventHandler) HandleOrderCreated(ctx context.Context, evt event.Ev
 	}
 
 	order := model.Order{
-		OrderID:    e.OrderID,
-		UserID:     e.UserID,
-		State:      e.State,
+		OrderID:    e.AggregateID,
+		State:      e.ToState,
 		Amount:     e.Amount,
 		OrderItems: orderItems,
 		BaseModel: model.BaseModel{
@@ -51,19 +51,19 @@ func (h *OrderEventHandler) HandleOrderCreated(ctx context.Context, evt event.Ev
 	return nil
 }
 
-func (h *OrderEventHandler) HandleOrderConfirmed(ctx context.Context, evt event.Event) error {
-	var e *event.OrderConfirmedEvent
+func (h *OrderEventHandler) HandleOrderConfirmed(ctx context.Context, evt evt_model.Event) error {
+	var e *evt_model.OrderConfirmedEvent
 	var ok bool
-	if e, ok = evt.(*event.OrderConfirmedEvent); !ok {
+	if e, ok = evt.(*evt_model.OrderConfirmedEvent); !ok {
 		return errUnknownEventFormat
 	}
 
-	order, err := h.orderService.GetOrder(ctx, e.OrderID)
+	order, err := h.orderService.GetOrder(ctx, e.AggregateID)
 	if err != nil {
 		return err
 	}
 
-	order.State = e.State
+	order.State = e.ToState
 	order.UpdatedAt = e.CreatedAt
 
 	_, err = h.orderService.UpdateOrder(ctx, order)
@@ -75,19 +75,19 @@ func (h *OrderEventHandler) HandleOrderConfirmed(ctx context.Context, evt event.
 }
 
 // TODO: 物流相關領域事件  需要更新
-func (h *OrderEventHandler) HandleOrderShipped(ctx context.Context, evt event.Event) error {
-	var e *event.OrderShippedEvent
+func (h *OrderEventHandler) HandleOrderShipped(ctx context.Context, evt evt_model.Event) error {
+	var e *evt_model.OrderShippedEvent
 	var ok bool
-	if e, ok = evt.(*event.OrderShippedEvent); !ok {
+	if e, ok = evt.(*evt_model.OrderShippedEvent); !ok {
 		return errUnknownEventFormat
 	}
 
-	order, err := h.orderService.GetOrder(ctx, e.OrderID)
+	order, err := h.orderService.GetOrder(ctx, e.AggregateID)
 	if err != nil {
 		return err
 	}
 
-	order.State = e.State
+	order.State = e.ToState
 	order.UpdatedAt = e.CreatedAt
 
 	_, err = h.orderService.UpdateOrder(ctx, order)
@@ -99,19 +99,19 @@ func (h *OrderEventHandler) HandleOrderShipped(ctx context.Context, evt event.Ev
 }
 
 // TODO: 退款後，需要更新庫存 (product 領域事件，需要更新庫存)
-func (h *OrderEventHandler) HandleOrderCancelled(ctx context.Context, evt event.Event) error {
-	var e *event.OrderCancelledEvent
+func (h *OrderEventHandler) HandleOrderCancelled(ctx context.Context, evt evt_model.Event) error {
+	var e *evt_model.OrderCancelledEvent
 	var ok bool
-	if e, ok = evt.(*event.OrderCancelledEvent); !ok {
+	if e, ok = evt.(*evt_model.OrderCancelledEvent); !ok {
 		return errUnknownEventFormat
 	}
 
-	order, err := h.orderService.GetOrder(ctx, e.OrderID)
+	order, err := h.orderService.GetOrder(ctx, e.AggregateID)
 	if err != nil {
 		return err
 	}
 
-	order.State = e.State
+	order.State = e.ToState
 	order.IsDeleted = true
 	order.UpdatedAt = e.CreatedAt
 
@@ -124,19 +124,19 @@ func (h *OrderEventHandler) HandleOrderCancelled(ctx context.Context, evt event.
 }
 
 // TODO: 退款後，金流事件handler 需要負責退退款處理
-func (h *OrderEventHandler) HandleOrderRefunded(ctx context.Context, evt event.Event) error {
-	var e *event.OrderRefundedEvent
+func (h *OrderEventHandler) HandleOrderRefunded(ctx context.Context, evt evt_model.Event) error {
+	var e *evt_model.OrderRefundedEvent
 	var ok bool
-	if e, ok = evt.(*event.OrderRefundedEvent); !ok {
+	if e, ok = evt.(*evt_model.OrderRefundedEvent); !ok {
 		return errUnknownEventFormat
 	}
 
-	order, err := h.orderService.GetOrder(ctx, e.OrderID)
+	order, err := h.orderService.GetOrder(ctx, e.AggregateID)
 	if err != nil {
 		return err
 	}
 
-	order.State = e.State
+	order.State = e.ToState
 	order.UpdatedAt = e.CreatedAt
 
 	_, err = h.orderService.UpdateOrder(ctx, order)

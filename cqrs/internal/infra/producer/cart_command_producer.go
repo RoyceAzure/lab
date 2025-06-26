@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/RoyceAzure/lab/cqrs/internal/command"
-	"github.com/RoyceAzure/lab/cqrs/internal/model"
+	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
+	cmd_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/command"
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/message"
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/producer"
 )
@@ -19,7 +19,7 @@ type CartCommandProducer struct {
 
 type ICartCommandProducer interface {
 	ProduceCartCreatedCommand(ctx context.Context, userID int, items []model.CartItem) error
-	ProduceCartUpdatedCommand(ctx context.Context, userID int, details []command.CartUpdatedDetial) error
+	ProduceCartUpdatedCommand(ctx context.Context, userID int, details []cmd_model.CartUpdatedDetial) error
 	ProduceCartDeletedCommand(ctx context.Context, userID int) error
 }
 
@@ -28,7 +28,7 @@ func NewCartCommandProducer(producer producer.Producer) *CartCommandProducer {
 }
 
 func (c *CartCommandProducer) ProduceCartCreatedCommand(ctx context.Context, userID int, items []model.CartItem) error {
-	command := command.CartCreatedCommand{
+	command := cmd_model.CartCreatedCommand{
 		UserID: userID,
 		Items:  items,
 	}
@@ -41,8 +41,8 @@ func (c *CartCommandProducer) ProduceCartCreatedCommand(ctx context.Context, use
 	return c.producer.Produce(ctx, []message.Message{msg})
 }
 
-func (c *CartCommandProducer) ProduceCartUpdatedCommand(ctx context.Context, userID int, details []command.CartUpdatedDetial) error {
-	command := command.CartUpdatedCommand{
+func (c *CartCommandProducer) ProduceCartUpdatedCommand(ctx context.Context, userID int, details []cmd_model.CartUpdatedDetial) error {
+	command := cmd_model.CartUpdatedCommand{
 		UserID:  userID,
 		Details: details,
 	}
@@ -56,7 +56,7 @@ func (c *CartCommandProducer) ProduceCartUpdatedCommand(ctx context.Context, use
 }
 
 func (c *CartCommandProducer) ProduceCartDeletedCommand(ctx context.Context, userID int) error {
-	command := command.CartDeletedCommand{
+	command := cmd_model.CartDeletedCommand{
 		UserID: userID,
 	}
 
@@ -68,7 +68,7 @@ func (c *CartCommandProducer) ProduceCartDeletedCommand(ctx context.Context, use
 	return c.producer.Produce(ctx, []message.Message{msg})
 }
 
-func (c *CartCommandProducer) convertToMessage(userID int, cmd command.Command) (message.Message, error) {
+func (c *CartCommandProducer) convertToMessage(userID int, cmd cmd_model.Command) (message.Message, error) {
 	cmdValue, err := json.Marshal(cmd)
 	if err != nil {
 		return message.Message{}, err

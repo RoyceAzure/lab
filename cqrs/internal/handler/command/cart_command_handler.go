@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/RoyceAzure/lab/cqrs/internal/command"
-	"github.com/RoyceAzure/lab/cqrs/internal/event"
-	"github.com/RoyceAzure/lab/cqrs/internal/model"
+	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
+	cmd_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/command"
+	evt_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/event"
 	"github.com/RoyceAzure/lab/cqrs/internal/service"
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/message"
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/producer"
@@ -38,7 +38,7 @@ func newCartCommandHandler(userService *service.UserService, productService *ser
 }
 
 // 通用的事件消息準備函數
-func prepareEventMessage(userID int, eventType event.EventType, payload interface{}) (message.Message, error) {
+func prepareEventMessage(userID int, eventType evt_model.EventType, payload interface{}) (message.Message, error) {
 	eventBytes, err := json.Marshal(payload)
 	if err != nil {
 		return message.Message{}, err
@@ -60,10 +60,10 @@ func prepareEventMessage(userID int, eventType event.EventType, payload interfac
 // 強一致性處理庫存狀態，一個商品同時間只有一個thread處理
 // 購物車Connand 使用delta 處理庫存，所以需要處理冪等(已經由HandlerDispatcher處理)
 // 庫存處理不使用event，使用redis state-based
-func (h *cartCommandHandler) HandleCartCreated(ctx context.Context, cmd command.Command) error {
-	var c *command.CartCreatedCommand
+func (h *cartCommandHandler) HandleCartCreated(ctx context.Context, cmd cmd_model.Command) error {
+	var c *cmd_model.CartCreatedCommand
 	var ok bool
-	if c, ok = cmd.(*command.CartCreatedCommand); !ok {
+	if c, ok = cmd.(*cmd_model.CartCreatedCommand); !ok {
 		return errCartCommand
 	}
 
@@ -133,11 +133,11 @@ func (h *cartCommandHandler) produceCartFailedEvent(ctx context.Context, userID 
 }
 
 func prepareCartEventMessage(userID int, orderItems []model.OrderItemData) (message.Message, error) {
-	return prepareEventMessage(userID, event.CartCreatedEventName, event.CartCreatedEvent{
-		BaseEvent: event.BaseEvent{
+	return prepareEventMessage(userID, evt_model.CartCreatedEventName, evt_model.CartCreatedEvent{
+		BaseEvent: evt_model.BaseEvent{
 			EventID:     uuid.New().String(),
 			AggregateID: generateCartAggregateID(userID),
-			EventType:   event.CartCreatedEventName,
+			EventType:   evt_model.CartCreatedEventName,
 		},
 		UserID: userID,
 		Items:  orderItems,
@@ -145,11 +145,11 @@ func prepareCartEventMessage(userID int, orderItems []model.OrderItemData) (mess
 }
 
 func prepareCartFailedEventMessage(userID int, errs ...error) (message.Message, error) {
-	return prepareEventMessage(userID, event.CartFailedEventName, event.CartFailedEvent{
-		BaseEvent: event.BaseEvent{
+	return prepareEventMessage(userID, evt_model.CartFailedEventName, evt_model.CartFailedEvent{
+		BaseEvent: evt_model.BaseEvent{
 			EventID:     uuid.New().String(),
 			AggregateID: generateCartAggregateID(userID),
-			EventType:   event.CartFailedEventName,
+			EventType:   evt_model.CartFailedEventName,
 		},
 		Message: errors.Join(errs...).Error(),
 	})
@@ -159,10 +159,10 @@ func prepareCartFailedEventMessage(userID int, errs ...error) (message.Message, 
 // 強一致性處理庫存狀態，一個商品同時間只有一個thread處理
 // 購物車Connand 使用delta 處理庫存，所以需要處理冪等(已經由HandlerDispatcher處理)
 // 庫存處理不使用event，使用redis state-based
-func (h *cartCommandHandler) HandleCartUpdated(ctx context.Context, cmd command.Command) error {
-	var c *command.CartUpdatedCommand
+func (h *cartCommandHandler) HandleCartUpdated(ctx context.Context, cmd cmd_model.Command) error {
+	var c *cmd_model.CartUpdatedCommand
 	var ok bool
-	if c, ok = cmd.(*command.CartUpdatedCommand); !ok {
+	if c, ok = cmd.(*cmd_model.CartUpdatedCommand); !ok {
 		return errCartCommand
 	}
 
@@ -175,17 +175,17 @@ func (h *cartCommandHandler) HandleCartUpdated(ctx context.Context, cmd command.
 	//庫存個別檢查，個別處理，避免一個商品庫存不足，導致整個購物車失敗
 	for _, item := range c.Details {
 		switch item.Action {
-		case command.CartAddItem:
+		case cmd_model.CartAddItem:
 			// 扣庫存
 			err = h.productService.SubProductStock(ctx, item.ProductID, uint(item.Quantity))
-		case command.CartSubItem:
+		case cmd_model.CartSubItem:
 			// 加庫存
 			err = h.productService.AddProductStock(ctx, item.ProductID, uint(item.Quantity))
 		}
 		if err != nil {
 			go h.produceCartFailedEvent(ctx, user.UserID, err)
 		} else {
-			go h.produceCartUpdatedEvent(ctx, user.UserID, []command.CartUpdatedDetial{item})
+			go h.produceCartUpdatedEvent(ctx, user.UserID, []cmd_model.CartUpdatedDetial{item})
 		}
 	}
 
@@ -195,7 +195,7 @@ func (h *cartCommandHandler) HandleCartUpdated(ctx context.Context, cmd command.
 // 更新購物車事件發布
 // 發送狀態變更事件
 // TODO :若是有任何失敗，需要紀錄並後續處理
-func (h *cartCommandHandler) produceCartUpdatedEvent(ctx context.Context, userID int, details []command.CartUpdatedDetial) {
+func (h *cartCommandHandler) produceCartUpdatedEvent(ctx context.Context, userID int, details []cmd_model.CartUpdatedDetial) {
 	msg, err := prepareCartUpdatedEventMessage(userID, details)
 	if err != nil {
 		return
@@ -207,12 +207,12 @@ func (h *cartCommandHandler) produceCartUpdatedEvent(ctx context.Context, userID
 	}
 }
 
-func prepareCartUpdatedEventMessage(userID int, details []command.CartUpdatedDetial) (message.Message, error) {
-	return prepareEventMessage(userID, event.CartUpdatedEventName, event.CartUpdatedEvent{
-		BaseEvent: event.BaseEvent{
+func prepareCartUpdatedEventMessage(userID int, details []cmd_model.CartUpdatedDetial) (message.Message, error) {
+	return prepareEventMessage(userID, evt_model.CartUpdatedEventName, evt_model.CartUpdatedEvent{
+		BaseEvent: evt_model.BaseEvent{
 			EventID:     uuid.New().String(),
 			AggregateID: generateCartAggregateID(userID),
-			EventType:   event.CartUpdatedEventName,
+			EventType:   evt_model.CartUpdatedEventName,
 		},
 		UserID:  userID,
 		Details: details,
@@ -221,10 +221,10 @@ func prepareCartUpdatedEventMessage(userID int, details []command.CartUpdatedDet
 
 // 購物車確認-> 進入訂單狀態後 會刪除購物車
 // 或者購物車直接刪除
-func (h *cartCommandHandler) HandleCartDeleted(ctx context.Context, cmd command.Command) error {
-	var c *command.CartDeletedCommand
+func (h *cartCommandHandler) HandleCartDeleted(ctx context.Context, cmd cmd_model.Command) error {
+	var c *cmd_model.CartDeletedCommand
 	var ok bool
-	if c, ok = cmd.(*command.CartDeletedCommand); !ok {
+	if c, ok = cmd.(*cmd_model.CartDeletedCommand); !ok {
 		return errCartCommand
 	}
 
@@ -252,11 +252,11 @@ func (h *cartCommandHandler) produceCartDeletedEvent(ctx context.Context, userID
 }
 
 func prepareCartDeletedEventMessage(userID int) (message.Message, error) {
-	return prepareEventMessage(userID, event.CartDeletedEventName, event.CartDeletedEvent{
-		BaseEvent: event.BaseEvent{
+	return prepareEventMessage(userID, evt_model.CartDeletedEventName, evt_model.CartDeletedEvent{
+		BaseEvent: evt_model.BaseEvent{
 			EventID:     uuid.New().String(),
 			AggregateID: generateCartAggregateID(userID),
-			EventType:   event.CartDeletedEventName,
+			EventType:   evt_model.CartDeletedEventName,
 		},
 		UserID: userID,
 	})

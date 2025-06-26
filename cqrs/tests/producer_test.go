@@ -8,15 +8,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RoyceAzure/lab/cqrs/internal/command"
-	command_handler "github.com/RoyceAzure/lab/cqrs/internal/command/handler"
-	"github.com/RoyceAzure/lab/cqrs/internal/consumer"
-	event_handler "github.com/RoyceAzure/lab/cqrs/internal/event/handler"
+	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
+	cmd_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/command"
+	command_handler "github.com/RoyceAzure/lab/cqrs/internal/handler/command"
+	event_handler "github.com/RoyceAzure/lab/cqrs/internal/handler/event"
+	"github.com/RoyceAzure/lab/cqrs/internal/infra/consumer"
+	"github.com/RoyceAzure/lab/cqrs/internal/infra/producer"
+	"github.com/RoyceAzure/lab/cqrs/internal/infra/producer/balancer"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/redis_repo"
-	"github.com/RoyceAzure/lab/cqrs/internal/model"
-	"github.com/RoyceAzure/lab/cqrs/internal/producer"
-	"github.com/RoyceAzure/lab/cqrs/internal/producer/balancer"
 	"github.com/RoyceAzure/lab/cqrs/internal/service"
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/admin"
 	kafka_config "github.com/RoyceAzure/lab/rj_kafka/kafka/config"
@@ -473,15 +473,15 @@ func (suite *ProducerTestSuite) simulateUserCartOperations(ctx context.Context, 
 
 			// 隨機決定要更新幾個商品（1-3個）
 			updateCount := rand.Intn(3) + 1
-			details := make([]command.CartUpdatedDetial, 0, updateCount)
+			details := make([]cmd_model.CartUpdatedDetial, 0, updateCount)
 
 			// 隨機選擇商品進行更新
 			for i := 0; i < updateCount; i++ {
 				product := suite.testProducts[rand.Intn(len(suite.testProducts))]
-				action := command.CartAddItem
+				action := cmd_model.CartAddItem
 				quantity := rand.Intn(3) + 1 // 1-3的數量變化
 
-				details = append(details, command.CartUpdatedDetial{
+				details = append(details, cmd_model.CartUpdatedDetial{
 					Action:    action,
 					ProductID: product.ProductID,
 					Quantity:  quantity,

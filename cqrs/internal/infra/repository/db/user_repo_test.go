@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/RoyceAzure/lab/cqrs/config"
-	"github.com/RoyceAzure/lab/cqrs/internal/model"
+	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"gorm.io/gorm"
