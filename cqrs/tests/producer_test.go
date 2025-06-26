@@ -40,8 +40,8 @@ var (
 	CartCmdTopicName   = fmt.Sprintf("%s-cart-cmd-%d", TopicPrefix, time.Now().UnixNano())
 	CartEventTopicName = fmt.Sprintf("%s-cart-evt-%d", TopicPrefix, time.Now().UnixNano())
 
-	ProductNum = 20
-	UserNum    = 1
+	ProductNum = 50
+	UserNum    = 10000
 )
 
 var kafkaConfigTemplate kafka_config.Config
@@ -160,15 +160,12 @@ func TestProducerTestSuite(t *testing.T) {
 	suite.Run(t, new(ProducerTestSuite))
 }
 
-func generanteRandomint() int {
-	return rand.Intn(1000000)
-}
-
 func generateRandomProductID() string {
 	return fmt.Sprintf("P%d", rand.Intn(1000000))
 }
 
 func (suite *ProducerTestSuite) SetupSuite() {
+	suite.T().Log("=== SetupSuite: 開始設置測試套件 ===")
 	cleanup := setupTestEnvironment(suite.T())
 	defer cleanup()
 
@@ -202,9 +199,12 @@ func (suite *ProducerTestSuite) SetupSuite() {
 	suite.setupCartCommandProducer()
 	suite.setupCartEventConsumer()
 	suite.setupCartCommandConsumer()
+	suite.T().Log("=== SetupSuite: 測試套件設置完成 ===")
 }
 
 func (suite *ProducerTestSuite) SetupTest() {
+	suite.T().Log("=== SetupTest: 開始設置單個測試 ===")
+
 	ctx := context.Background()
 
 	// 初始化 initialStocks map
@@ -213,21 +213,19 @@ func (suite *ProducerTestSuite) SetupTest() {
 	// 準備測試使用者資料
 	suite.testUsers = make([]*model.User, UserNum)
 	for i := 0; i < UserNum; i++ {
-		suite.testUsers[i] = &model.User{
-			UserID:      generanteRandomint(),
+		user := &model.User{
 			UserName:    fmt.Sprintf("Test User %d", i+1),
 			UserEmail:   fmt.Sprintf("test%d@example.com", i+1),
 			UserPhone:   fmt.Sprintf("09%d", i+1),
 			UserAddress: "test address",
 		}
-	}
-
-	// 建立測試使用者
-	for _, user := range suite.testUsers {
-		err := suite.userRepo.CreateUser(user)
+		// 建立測試使用者並獲取創建後的用戶（包含自動生成的ID）
+		createdUser, err := suite.userRepo.CreateUser(user)
 		require.NoError(suite.T(), err)
+		suite.testUsers[i] = createdUser
+
 		// 確保使用者已經被創建
-		_, err = suite.userRepo.GetUserByID(user.UserID)
+		_, err = suite.userRepo.GetUserByID(createdUser.UserID)
 		require.NoError(suite.T(), err)
 	}
 
@@ -261,9 +259,14 @@ func (suite *ProducerTestSuite) SetupTest() {
 		require.NoError(suite.T(), err)
 		require.Equal(suite.T(), initialStock, stock)
 	}
+
+	// 在設置完成後，給予一些時間讓系統穩定
+	time.Sleep(2 * time.Second)
+	suite.T().Logf("=== SetupTest: 測試設置完成，已創建 %d 個使用者和 %d 個商品 ===", len(suite.testUsers), len(suite.testProducts))
 }
 
 func (suite *ProducerTestSuite) TearDownTest() {
+	suite.T().Log("=== TearDownTest: 開始清理單個測試 ===")
 	ctx := context.Background()
 
 	// 清理測試使用者資料
@@ -282,25 +285,43 @@ func (suite *ProducerTestSuite) TearDownTest() {
 		require.NoError(suite.T(), err)
 	}
 
-	suite.toCartCommandProducer.Close()
-	suite.toCartEventProducer.Close()
-	for _, consumer := range suite.cartCommandConsumers {
-		consumer.Stop()
-	}
-	for _, consumer := range suite.cartEventConsumers {
-		consumer.Stop()
-	}
+	// 等待一段時間確保所有連接都已正確關閉
+	time.Sleep(2 * time.Second)
+
+	suite.T().Log("=== TearDownTest: 測試清理完成 ===")
 }
 
 func (suite *ProducerTestSuite) TearDownSuite() {
-	suite.toCartCommandProducer.Close()
-	suite.toCartEventProducer.Close()
-	for _, consumer := range suite.cartCommandConsumers {
-		consumer.Stop()
+	suite.T().Log("=== TearDownSuite: 開始清理測試套件 ===")
+	// 先停止所有消費者
+	wg := sync.WaitGroup{}
+	for _, cus := range suite.cartCommandConsumers {
+		wg.Add(1)
+		go func(consumer consumer.IBaseConsumer) {
+			defer wg.Done()
+			consumer.Stop()
+		}(cus)
 	}
-	for _, consumer := range suite.cartEventConsumers {
-		consumer.Stop()
+	for _, cus := range suite.cartEventConsumers {
+		wg.Add(1)
+		go func(consumer consumer.IBaseConsumer) {
+			defer wg.Done()
+			consumer.Stop()
+		}(cus)
 	}
+
+	wg.Wait()
+
+	// 關閉生產者
+	if suite.toCartCommandProducer != nil {
+		suite.toCartCommandProducer.Close()
+		suite.toCartCommandProducer = nil
+	}
+	if suite.toCartEventProducer != nil {
+		suite.toCartEventProducer.Close()
+		suite.toCartEventProducer = nil
+	}
+	suite.T().Log("=== TearDownSuite: 測試套件清理完成 ===")
 }
 
 // for user
@@ -441,10 +462,10 @@ func (suite *ProducerTestSuite) simulateUserCartOperations(ctx context.Context, 
 	for {
 		select {
 		case <-ctx.Done():
-			suite.printUserProductQuantities(userID, userProductQuantities)
+			// suite.printUserProductQuantities(userID, userProductQuantities)
 			return
 		case <-timer.C:
-			suite.printUserProductQuantities(userID, userProductQuantities)
+			// suite.printUserProductQuantities(userID, userProductQuantities)
 			return
 		default:
 			// 隨機等待 100-300ms，避免請求太密集
@@ -501,8 +522,7 @@ func (suite *ProducerTestSuite) TestConcurrentCartOperations() {
 	errChan := make(chan error, 500)
 
 	go func() {
-		for err := range errChan {
-			suite.T().Logf("Operation error: %v", err)
+		for range errChan {
 		}
 	}()
 
@@ -525,7 +545,7 @@ func (suite *ProducerTestSuite) TestConcurrentCartOperations() {
 
 	//驗證階段
 	// 等待一段時間讓事件被處理
-	time.Sleep(2 * time.Second)
+	time.Sleep(20 * time.Second)
 
 	// 1. 獲取所有商品的當前庫存
 	currentStocks := make(map[string]uint)
@@ -556,7 +576,7 @@ func (suite *ProducerTestSuite) TestConcurrentCartOperations() {
 		suite.T().Logf("Product %s: initial=%d, current=%d, in_carts=%d",
 			productID, initialStock, currentStock, inCarts)
 
-		// require.Equal(suite.T(), initialStock-currentStock, inCarts,
-		// 	"Product %s: stock difference should equal total in carts", productID)
+		require.Equal(suite.T(), initialStock-currentStock, inCarts,
+			"Product %s: stock difference should equal total in carts", productID)
 	}
 }

@@ -48,11 +48,14 @@ func (suite *UserRepoTestSuite) TestCreateUser() {
 		UserAddress: "123 Main St",
 	}
 
-	err := suite.userRepo.CreateUser(user)
-
+	createdUser, err := suite.userRepo.CreateUser(user)
 	require.NoError(suite.T(), err)
-	require.NotZero(suite.T(), user.UserID)
-	require.False(suite.T(), user.CreatedAt.IsZero())
+	require.Equal(suite.T(), user.UserName, createdUser.UserName)
+	require.Equal(suite.T(), user.UserEmail, createdUser.UserEmail)
+	require.Equal(suite.T(), user.UserPhone, createdUser.UserPhone)
+	require.Equal(suite.T(), user.UserAddress, createdUser.UserAddress)
+	require.NotZero(suite.T(), createdUser.UserID)
+	require.False(suite.T(), createdUser.CreatedAt.IsZero())
 }
 
 func (suite *UserRepoTestSuite) TestCreateUser_DuplicateEmail() {
@@ -70,10 +73,17 @@ func (suite *UserRepoTestSuite) TestCreateUser_DuplicateEmail() {
 		UserAddress: "456 Oak St",
 	}
 
-	err1 := suite.userRepo.CreateUser(user1)
-	err2 := suite.userRepo.CreateUser(user2)
+	createdUser1, err1 := suite.userRepo.CreateUser(user1)
+	_, err2 := suite.userRepo.CreateUser(user2)
 
 	require.NoError(suite.T(), err1)
+	require.Error(suite.T(), err2) // 應該會失敗
+	require.Equal(suite.T(), user1.UserName, createdUser1.UserName)
+	require.Equal(suite.T(), user1.UserEmail, createdUser1.UserEmail)
+	require.Equal(suite.T(), user1.UserPhone, createdUser1.UserPhone)
+	require.Equal(suite.T(), user1.UserAddress, createdUser1.UserAddress)
+	require.NotZero(suite.T(), createdUser1.UserID)
+	require.False(suite.T(), createdUser1.CreatedAt.IsZero())
 	require.Error(suite.T(), err2) // 應該會失敗
 }
 

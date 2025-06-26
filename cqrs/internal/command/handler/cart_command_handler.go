@@ -178,19 +178,14 @@ func (h *cartCommandHandler) HandleCartUpdated(ctx context.Context, cmd command.
 		case command.CartAddItem:
 			// 扣庫存
 			err = h.productService.SubProductStock(ctx, item.ProductID, uint(item.Quantity))
-			if err != nil {
-				go h.produceCartFailedEvent(ctx, user.UserID, err)
-			} else {
-				go h.produceCartUpdatedEvent(ctx, user.UserID, c.Details)
-			}
 		case command.CartSubItem:
 			// 加庫存
 			err = h.productService.AddProductStock(ctx, item.ProductID, uint(item.Quantity))
-			if err != nil {
-				go h.produceCartFailedEvent(ctx, user.UserID, err)
-			} else {
-				go h.produceCartUpdatedEvent(ctx, user.UserID, c.Details)
-			}
+		}
+		if err != nil {
+			go h.produceCartFailedEvent(ctx, user.UserID, err)
+		} else {
+			go h.produceCartUpdatedEvent(ctx, user.UserID, []command.CartUpdatedDetial{item})
 		}
 	}
 

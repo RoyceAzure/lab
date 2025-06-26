@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/RoyceAzure/lab/cqrs/internal/command"
 	"github.com/RoyceAzure/lab/cqrs/internal/event"
@@ -59,7 +58,8 @@ func (h *cartEventHandler) HandleCartFailed(ctx context.Context, evt event.Event
 
 	//先簡單印出
 	// TODO: 後續要發紀錄並發送訊息給前端
-	fmt.Println("CartFailedEvent", e.UserID, e.Message)
+	_ = e
+	// fmt.Println("CartFailedEvent", e.UserID, e.Message)
 
 	return nil
 }

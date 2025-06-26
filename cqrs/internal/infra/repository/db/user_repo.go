@@ -13,8 +13,11 @@ func NewUserRepo(dbDao *DbDao) *UserRepo {
 }
 
 // Create - 創建用戶
-func (s *UserRepo) CreateUser(user *model.User) error {
-	return s.dbDao.Create(user).Error
+func (s *UserRepo) CreateUser(user *model.User) (*model.User, error) {
+	if err := s.dbDao.Create(user).Error; err != nil {
+		return nil, err
+	}
+	return user, nil
 }
 
 // Read - 根據ID查詢用戶

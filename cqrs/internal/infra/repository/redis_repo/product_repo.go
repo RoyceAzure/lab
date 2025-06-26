@@ -112,7 +112,7 @@ func (s *ProductRepo) DeductProductStock(ctx context.Context, productID string, 
 	current_stock = tonumber(current_stock)
 	
 	if current_stock < quantity then
-		return 0
+		return -2  -- 表示庫存不足
 	end
 	
 	local new_stock = redis.call('HINCRBY', key, field, -quantity)
@@ -131,10 +131,10 @@ func (s *ProductRepo) DeductProductStock(ctx context.Context, productID string, 
 
 	switch {
 	case resultInt == -1:
-		return 0, fmt.Errorf("product with id %s not found", productID)
-	case resultInt == 0:
-		return 0, fmt.Errorf("product with id %s stock not enough", productID)
+		return 0, fmt.Errorf("%w: product with id %s not found", ErrProductNotFound, productID)
+	case resultInt == -2:
+		return 0, fmt.Errorf("%w: product with id %s stock not enough", ErrProductStockNotEnough, productID)
 	default:
-		return resultInt, nil // 返回扣減後的庫存
+		return resultInt, nil // 返回扣減後的庫存（可能為 0，表示剛好扣完）
 	}
 }
