@@ -3,8 +3,8 @@ package handler
 import (
 	"context"
 
-	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
 	evt_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/event"
+	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/eventdb"
 	"github.com/RoyceAzure/lab/cqrs/internal/service"
 )
 
@@ -12,10 +12,11 @@ import (
 // 儲存到eventdb  需要跟infra order eventdb
 type OrderEventHandler struct {
 	orderService *service.OrderService
+	orderEventDB *eventdb.EventDao
 }
 
-func NewOrderEventHandler(orderService *service.OrderService) *OrderEventHandler {
-	return &OrderEventHandler{orderService: orderService}
+func NewOrderEventHandler(orderService *service.OrderService, orderEventDB *eventdb.EventDao) *OrderEventHandler {
+	return &OrderEventHandler{orderService: orderService, orderEventDB: orderEventDB}
 }
 
 func (h *OrderEventHandler) HandleOrderCreated(ctx context.Context, evt evt_model.Event) error {
@@ -25,25 +26,7 @@ func (h *OrderEventHandler) HandleOrderCreated(ctx context.Context, evt evt_mode
 		return errUnknownEventFormat
 	}
 
-	orderItems := []model.OrderItem{}
-	for _, item := range e.Items {
-		orderItems = append(orderItems, model.OrderItem{
-			ProductID: item.ProductID,
-			Quantity:  item.Quantity,
-		})
-	}
-
-	order := model.Order{
-		OrderID:    e.AggregateID,
-		State:      e.ToState,
-		Amount:     e.Amount,
-		OrderItems: orderItems,
-		BaseModel: model.BaseModel{
-			CreatedAt: e.CreatedAt,
-		},
-	}
-
-	_, err := h.orderService.UpdateOrder(ctx, &order)
+	err := h.orderEventDB.SaveOrderCreatedEvent(ctx, e)
 	if err != nil {
 		return err
 	}
@@ -58,15 +41,7 @@ func (h *OrderEventHandler) HandleOrderConfirmed(ctx context.Context, evt evt_mo
 		return errUnknownEventFormat
 	}
 
-	order, err := h.orderService.GetOrder(ctx, e.AggregateID)
-	if err != nil {
-		return err
-	}
-
-	order.State = e.ToState
-	order.UpdatedAt = e.CreatedAt
-
-	_, err = h.orderService.UpdateOrder(ctx, order)
+	err := h.orderEventDB.SaveOrderConfirmedEvent(ctx, e)
 	if err != nil {
 		return err
 	}
@@ -82,15 +57,7 @@ func (h *OrderEventHandler) HandleOrderShipped(ctx context.Context, evt evt_mode
 		return errUnknownEventFormat
 	}
 
-	order, err := h.orderService.GetOrder(ctx, e.AggregateID)
-	if err != nil {
-		return err
-	}
-
-	order.State = e.ToState
-	order.UpdatedAt = e.CreatedAt
-
-	_, err = h.orderService.UpdateOrder(ctx, order)
+	err := h.orderEventDB.SaveOrderShippedEvent(ctx, e)
 	if err != nil {
 		return err
 	}
@@ -106,16 +73,7 @@ func (h *OrderEventHandler) HandleOrderCancelled(ctx context.Context, evt evt_mo
 		return errUnknownEventFormat
 	}
 
-	order, err := h.orderService.GetOrder(ctx, e.AggregateID)
-	if err != nil {
-		return err
-	}
-
-	order.State = e.ToState
-	order.IsDeleted = true
-	order.UpdatedAt = e.CreatedAt
-
-	_, err = h.orderService.UpdateOrder(ctx, order)
+	err := h.orderEventDB.SaveOrderCancelledEvent(ctx, e)
 	if err != nil {
 		return err
 	}
@@ -131,15 +89,7 @@ func (h *OrderEventHandler) HandleOrderRefunded(ctx context.Context, evt evt_mod
 		return errUnknownEventFormat
 	}
 
-	order, err := h.orderService.GetOrder(ctx, e.AggregateID)
-	if err != nil {
-		return err
-	}
-
-	order.State = e.ToState
-	order.UpdatedAt = e.CreatedAt
-
-	_, err = h.orderService.UpdateOrder(ctx, order)
+	err := h.orderEventDB.SaveOrderRefundedEvent(ctx, e)
 	if err != nil {
 		return err
 	}

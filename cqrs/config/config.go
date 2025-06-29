@@ -10,8 +10,9 @@ import (
 
 var (
 	// pf_config_siongleton atomic.Pointer[pgConfig]
-	pf_config_siongleton *PgConfig
-	pg_mux               sync.Mutex
+	pf_config_siongleton          *PgConfig
+	pf_event_db_config_siongleton *EventDBConfig
+	pg_mux                        sync.Mutex
 )
 
 type PgConfig struct {
@@ -35,6 +36,29 @@ func GetPGConfig() (*PgConfig, error) {
 	}
 
 	return pf_config_siongleton, nil
+}
+
+type EventDBConfig struct {
+	Address        string `mapstructure:"EVENT_DB_ADDRESS"`
+	Username       string `mapstructure:"EVENT_DB_USERNAME"`
+	Password       string `mapstructure:"EVENT_DB_PASSWORD"`
+	DisableTLS     bool   `mapstructure:"EVENT_DB_DISABLE_TLS"`
+	NodePreference string `mapstructure:"EVENT_DB_NODE_PREFERENCE"`
+}
+
+func GetEventDBConfig() (*EventDBConfig, error) {
+	pg_mux.Lock()
+	defer pg_mux.Unlock()
+	if pf_event_db_config_siongleton == nil {
+		cf, err := loadConfig[EventDBConfig]()
+		if err != nil {
+			return nil, err
+		}
+		pf_event_db_config_siongleton = cf
+		return cf, nil
+	}
+
+	return pf_event_db_config_siongleton, nil
 }
 
 /*

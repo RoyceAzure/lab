@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
@@ -11,6 +10,7 @@ import (
 	evt_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/event"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/eventdb"
+	"github.com/RoyceAzure/lab/cqrs/internal/pkg/util"
 	"github.com/RoyceAzure/lab/cqrs/internal/service"
 	"github.com/google/uuid"
 )
@@ -54,18 +54,20 @@ func (h *OrderCommandHandler) HandleOrderCreated(ctx context.Context, cmd cmd_mo
 		return err
 	}
 
-	orderID := generateOrderID()
+	orderID := util.GenerateOrderID()
 	eventID := uuid.New().String()
 	orderCreatedEvent := evt_model.OrderCreatedEvent{
 		BaseEvent: evt_model.BaseEvent{
 			EventID:     eventID,
-			AggregateID: generateOrderAggregateID(orderID),
+			AggregateID: util.GenerateOrderAggregateID(orderID),
 			EventType:   evt_model.OrderCreatedEventName,
 			CreatedAt:   time.Now().UTC(),
 		},
 		Items:     c.Items,
 		Amount:    amount,
-		FromState: model.OrderStatusPending,
+		UserID:    c.UserID,
+		OrderID:   orderID,
+		OrderDate: time.Now().UTC(),
 		ToState:   model.OrderStatusPending,
 	}
 
@@ -104,7 +106,7 @@ func (h *OrderCommandHandler) HandleOrderConfirmed(ctx context.Context, cmd cmd_
 	orderConfirmedEvent := evt_model.OrderConfirmedEvent{
 		BaseEvent: evt_model.BaseEvent{
 			EventID:     eventID,
-			AggregateID: generateOrderAggregateID(order.OrderID),
+			AggregateID: util.GenerateOrderAggregateID(order.OrderID),
 			EventType:   evt_model.OrderConfirmedEventName,
 			CreatedAt:   time.Now().UTC(),
 		},
@@ -144,7 +146,7 @@ func (h *OrderCommandHandler) OrderShippedCommand(ctx context.Context, cmd cmd_m
 	orderShippedEvent := evt_model.OrderShippedEvent{
 		BaseEvent: evt_model.BaseEvent{
 			EventID:     eventID,
-			AggregateID: generateOrderAggregateID(order.OrderID),
+			AggregateID: util.GenerateOrderAggregateID(order.OrderID),
 			EventType:   evt_model.OrderShippedEventName,
 			CreatedAt:   time.Now().UTC(),
 		},
@@ -181,19 +183,14 @@ func (h *OrderCommandHandler) OrderCancelledCommand(ctx context.Context, cmd cmd
 	}
 
 	eventID := uuid.New().String()
-	orderItems, err := h.orderService.TransferOrderItemToOrderItemData(ctx, order.OrderItems...)
-	if err != nil {
-		return err
-	}
 
 	orderCancelledEvent := evt_model.OrderCancelledEvent{
 		BaseEvent: evt_model.BaseEvent{
 			EventID:     eventID,
-			AggregateID: generateOrderAggregateID(order.OrderID),
+			AggregateID: util.GenerateOrderAggregateID(order.OrderID),
 			EventType:   evt_model.OrderCancelledEventName,
 			CreatedAt:   time.Now().UTC(),
 		},
-		Items:     orderItems,
 		Message:   c.Message,
 		FromState: model.OrderStatusConfirmed,
 		ToState:   model.OrderStatusCancelled,
@@ -234,7 +231,7 @@ func (h *OrderCommandHandler) OrderRefundedCommand(ctx context.Context, cmd cmd_
 	orderRefundedEvent := evt_model.OrderRefundedEvent{
 		BaseEvent: evt_model.BaseEvent{
 			EventID:     eventID,
-			AggregateID: generateOrderAggregateID(order.OrderID),
+			AggregateID: util.GenerateOrderAggregateID(order.OrderID),
 			EventType:   evt_model.OrderRefundedEventName,
 			CreatedAt:   time.Now().UTC(),
 		},
@@ -250,11 +247,4 @@ func (h *OrderCommandHandler) OrderRefundedCommand(ctx context.Context, cmd cmd_
 
 	// 發佈事件
 	return nil
-}
-
-func generateOrderID() string {
-	return fmt.Sprintf("%d", time.Now().UnixNano()) // 簡化版
-}
-func generateOrderAggregateID(orderID string) string {
-	return fmt.Sprintf("order-%s", orderID)
 }

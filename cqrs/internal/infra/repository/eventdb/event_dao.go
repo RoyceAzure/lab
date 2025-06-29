@@ -3,9 +3,15 @@ package eventdb
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 
-	"github.com/EventStore/EventStore-Client-Go/v3/esdb"
+	"github.com/EventStore/EventStore-Client-Go/v4/esdb"
 )
+
+type EventFormatError error
+
+var ErrEventFormat EventFormatError = errors.New("event format error")
 
 type EventDao struct {
 	client *esdb.Client
@@ -18,6 +24,7 @@ func NewEventDao(db *esdb.Client) *EventDao {
 // 寫入事件（Create）
 func (dao *EventDao) AppendEvent(ctx context.Context, streamID, eventType string, data interface{}) error {
 	payload, err := json.Marshal(data)
+	fmt.Printf("Event payload: %s\n", payload)
 	if err != nil {
 		return err
 	}

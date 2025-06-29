@@ -7,22 +7,31 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// 訂單聚合
+// 訂單階段  OrderItems不會變動
+// 訂單階段  只有state 會變動
 type OrderAggregate struct {
-	OrderID    string
-	UserID     int
-	OrderItems []model.OrderItemData
-	Amount     decimal.Decimal
-	OrderDate  time.Time
-	State      uint
+	OrderID      string
+	UserID       int
+	OrderItems   []model.OrderItemData
+	Amount       decimal.Decimal
+	OrderDate    time.Time
+	State        uint
+	CreatedAt    time.Time
+	TrackingCode string
+	Carrier      string
+	Message      string // 取消原因
 	// 不需要 Version，EventStore 管理
 }
 
 type OrderCreatedEvent struct {
 	BaseEvent
-	Items     []model.OrderItemData
-	Amount    decimal.Decimal
-	FromState uint
-	ToState   uint
+	UserID    int                   `json:"user_id"`
+	OrderID   string                `json:"order_id"`
+	OrderDate time.Time             `json:"order_date"`
+	Items     []model.OrderItemData `json:"items"`
+	Amount    decimal.Decimal       `json:"amount"`
+	ToState   uint                  `json:"to_state"`
 }
 
 func (e *OrderCreatedEvent) Type() EventType {
@@ -31,8 +40,8 @@ func (e *OrderCreatedEvent) Type() EventType {
 
 type OrderConfirmedEvent struct {
 	BaseEvent
-	FromState uint
-	ToState   uint
+	FromState uint `json:"from_state"`
+	ToState   uint `json:"to_state"`
 }
 
 func (e *OrderConfirmedEvent) Type() EventType {
@@ -41,10 +50,10 @@ func (e *OrderConfirmedEvent) Type() EventType {
 
 type OrderShippedEvent struct {
 	BaseEvent
-	TrackingCode string // 物流追蹤號
-	Carrier      string // 物流商
-	FromState    uint
-	ToState      uint
+	TrackingCode string `json:"tracking_code"`
+	Carrier      string `json:"carrier"`
+	FromState    uint   `json:"from_state"`
+	ToState      uint   `json:"to_state"`
 }
 
 func (e *OrderShippedEvent) Type() EventType {
@@ -53,10 +62,9 @@ func (e *OrderShippedEvent) Type() EventType {
 
 type OrderCancelledEvent struct {
 	BaseEvent
-	Message   string
-	Items     []model.OrderItemData
-	FromState uint
-	ToState   uint
+	Message   string `json:"message"`
+	FromState uint   `json:"from_state"`
+	ToState   uint   `json:"to_state"`
 }
 
 func (e *OrderCancelledEvent) Type() EventType {
@@ -65,9 +73,9 @@ func (e *OrderCancelledEvent) Type() EventType {
 
 type OrderRefundedEvent struct {
 	BaseEvent
-	Amount    decimal.Decimal
-	FromState uint
-	ToState   uint
+	Amount    decimal.Decimal `json:"amount"`
+	FromState uint            `json:"from_state"`
+	ToState   uint            `json:"to_state"`
 }
 
 func (e *OrderRefundedEvent) Type() EventType {

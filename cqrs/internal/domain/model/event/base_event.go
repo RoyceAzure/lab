@@ -3,10 +3,10 @@ package model
 import "time"
 
 type BaseEvent struct {
-	EventID     string    `json:"event_id"`
-	AggregateID string    `json:"aggregate_id"`
-	CreatedAt   time.Time `json:"created_at"`
-	EventType   EventType `json:"event_type"`
+	EventID     string    `json:"eventId"`
+	AggregateID string    `json:"aggregateId"`
+	CreatedAt   time.Time `json:"createdAt"`
+	EventType   EventType `json:"eventType"`
 }
 
 func (e *BaseEvent) GetID() string {
