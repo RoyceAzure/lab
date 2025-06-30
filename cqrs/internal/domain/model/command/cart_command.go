@@ -3,15 +3,24 @@ package model
 import "github.com/RoyceAzure/lab/cqrs/internal/domain/model"
 
 const (
-	CartCreatedCommandName CommandType = "CartCreated"
-	CartUpdatedCommandName CommandType = "CartUpdated"
-	CartDeletedCommandName CommandType = "CartDeleted"
+	CartCreatedCommandName   CommandType = "CartCreated"
+	CartUpdatedCommandName   CommandType = "CartUpdated"
+	CartDeletedCommandName   CommandType = "CartDeleted"
+	CartConfirmedCommandName CommandType = "CartConfirmed"
 )
 
 type CartCreatedCommand struct {
 	BaseCommand
 	UserID int              `json:"user_id"`
 	Items  []model.CartItem `json:"items"`
+}
+
+func NewCartCreatedCommand(userID int, items []model.CartItem) *CartCreatedCommand {
+	return &CartCreatedCommand{
+		BaseCommand: NewBaseCommand(),
+		UserID:      userID,
+		Items:       items,
+	}
 }
 
 func (c *CartCreatedCommand) Type() CommandType {
@@ -22,6 +31,14 @@ type CartUpdatedCommand struct {
 	BaseCommand
 	UserID  int                 `json:"user_id"`
 	Details []CartUpdatedDetial `json:"details"`
+}
+
+func NewCartUpdatedCommand(userID int, details []CartUpdatedDetial) *CartUpdatedCommand {
+	return &CartUpdatedCommand{
+		BaseCommand: NewBaseCommand(),
+		UserID:      userID,
+		Details:     details,
+	}
 }
 
 type CartUpdatedAction int
@@ -47,6 +64,29 @@ type CartDeletedCommand struct {
 	UserID int `json:"user_id"`
 }
 
+func NewCartDeletedCommand(userID int) *CartDeletedCommand {
+	return &CartDeletedCommand{
+		BaseCommand: NewBaseCommand(),
+		UserID:      userID,
+	}
+}
+
 func (c *CartDeletedCommand) Type() CommandType {
 	return CartDeletedCommandName
+}
+
+type CartConfirmedCommand struct {
+	BaseCommand
+	UserID int `json:"user_id"`
+}
+
+func NewCartConfirmedCommand(userID int) *CartConfirmedCommand {
+	return &CartConfirmedCommand{
+		BaseCommand: NewBaseCommand(),
+		UserID:      userID,
+	}
+}
+
+func (c *CartConfirmedCommand) Type() CommandType {
+	return CartConfirmedCommandName
 }

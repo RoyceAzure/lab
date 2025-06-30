@@ -21,6 +21,7 @@ type ICartCommandProducer interface {
 	ProduceCartCreatedCommand(ctx context.Context, userID int, items []model.CartItem) error
 	ProduceCartUpdatedCommand(ctx context.Context, userID int, details []cmd_model.CartUpdatedDetial) error
 	ProduceCartDeletedCommand(ctx context.Context, userID int) error
+	ProduceCartConfirmedCommand(ctx context.Context, userID int) error
 }
 
 func NewCartCommandProducer(producer producer.Producer) *CartCommandProducer {
@@ -28,12 +29,9 @@ func NewCartCommandProducer(producer producer.Producer) *CartCommandProducer {
 }
 
 func (c *CartCommandProducer) ProduceCartCreatedCommand(ctx context.Context, userID int, items []model.CartItem) error {
-	command := cmd_model.CartCreatedCommand{
-		UserID: userID,
-		Items:  items,
-	}
+	command := cmd_model.NewCartCreatedCommand(userID, items)
 
-	msg, err := c.convertToMessage(userID, &command)
+	msg, err := c.convertToMessage(userID, command)
 	if err != nil {
 		return err
 	}
@@ -42,12 +40,9 @@ func (c *CartCommandProducer) ProduceCartCreatedCommand(ctx context.Context, use
 }
 
 func (c *CartCommandProducer) ProduceCartUpdatedCommand(ctx context.Context, userID int, details []cmd_model.CartUpdatedDetial) error {
-	command := cmd_model.CartUpdatedCommand{
-		UserID:  userID,
-		Details: details,
-	}
+	command := cmd_model.NewCartUpdatedCommand(userID, details)
 
-	msg, err := c.convertToMessage(userID, &command)
+	msg, err := c.convertToMessage(userID, command)
 	if err != nil {
 		return err
 	}
@@ -56,11 +51,20 @@ func (c *CartCommandProducer) ProduceCartUpdatedCommand(ctx context.Context, use
 }
 
 func (c *CartCommandProducer) ProduceCartDeletedCommand(ctx context.Context, userID int) error {
-	command := cmd_model.CartDeletedCommand{
-		UserID: userID,
+	command := cmd_model.NewCartDeletedCommand(userID)
+
+	msg, err := c.convertToMessage(userID, command)
+	if err != nil {
+		return err
 	}
 
-	msg, err := c.convertToMessage(userID, &command)
+	return c.producer.Produce(ctx, []message.Message{msg})
+}
+
+func (c *CartCommandProducer) ProduceCartConfirmedCommand(ctx context.Context, userID int) error {
+	command := cmd_model.NewCartConfirmedCommand(userID)
+
+	msg, err := c.convertToMessage(userID, command)
 	if err != nil {
 		return err
 	}

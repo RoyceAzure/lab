@@ -1,7 +1,15 @@
 package model
 
+import "github.com/google/uuid"
+
 type BaseCommand struct {
 	commandID string
+}
+
+func NewBaseCommand() BaseCommand {
+	return BaseCommand{
+		commandID: uuid.New().String(),
+	}
 }
 
 func (c *BaseCommand) GetID() string {
