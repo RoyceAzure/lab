@@ -24,5 +24,6 @@ func (d *DbDao) InitMigrate() error {
 		&model.Product{},
 		&model.Order{},
 		&model.OrderItem{},
+		&model.UserOrder{},
 	)
 }
