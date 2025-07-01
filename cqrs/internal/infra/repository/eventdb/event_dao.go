@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/EventStore/EventStore-Client-Go/v4/esdb"
+	"github.com/google/uuid"
 )
 
 type EventFormatError error
@@ -17,18 +18,21 @@ type EventDao struct {
 	client *esdb.Client
 }
 
-func NewEventDao(db *esdb.Client) *EventDao {
-	return &EventDao{client: db}
+func NewEventDao(client *esdb.Client) *EventDao {
+	if client == nil {
+		panic("eventdb client is nil")
+	}
+	return &EventDao{client: client}
 }
 
 // 寫入事件（Create）
-func (dao *EventDao) AppendEvent(ctx context.Context, streamID, eventType string, data interface{}) error {
+func (dao *EventDao) AppendEvent(ctx context.Context, eventId uuid.UUID, streamID, eventType string, data interface{}) error {
 	payload, err := json.Marshal(data)
-	fmt.Printf("Event payload: %s\n", payload)
 	if err != nil {
 		return err
 	}
 	eventData := esdb.EventData{
+		EventID:     eventId,
 		ContentType: esdb.ContentTypeJson,
 		EventType:   eventType,
 		Data:        payload,
@@ -61,4 +65,12 @@ func (dao *EventDao) ReadEvents(ctx context.Context, streamID string) ([]*esdb.R
 func (dao *EventDao) DeleteStream(ctx context.Context, streamID string) error {
 	_, err := dao.client.DeleteStream(ctx, streamID, esdb.DeleteStreamOptions{})
 	return err
+}
+
+// evt order stream id
+// return :
+//
+//	order-{order-id}
+func GenerateOrderStreamID(orderID string) string {
+	return fmt.Sprintf("order-%s", orderID)
 }

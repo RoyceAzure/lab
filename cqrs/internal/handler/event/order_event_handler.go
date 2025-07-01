@@ -2,21 +2,19 @@ package handler
 
 import (
 	"context"
+	"fmt"
 
 	evt_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/event"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/eventdb"
-	"github.com/RoyceAzure/lab/cqrs/internal/service"
 )
 
 // 處理order事件
-// 儲存到eventdb  需要跟infra order eventdb
 type OrderEventHandler struct {
-	orderService *service.OrderService
 	orderEventDB *eventdb.EventDao
 }
 
-func NewOrderEventHandler(orderService *service.OrderService, orderEventDB *eventdb.EventDao) *OrderEventHandler {
-	return &OrderEventHandler{orderService: orderService, orderEventDB: orderEventDB}
+func newOrderEventHandler(orderEventDB *eventdb.EventDao) *OrderEventHandler {
+	return &OrderEventHandler{orderEventDB: orderEventDB}
 }
 
 func (h *OrderEventHandler) HandleOrderCreated(ctx context.Context, evt evt_model.Event) error {
@@ -26,11 +24,7 @@ func (h *OrderEventHandler) HandleOrderCreated(ctx context.Context, evt evt_mode
 		return errUnknownEventFormat
 	}
 
-	err := h.orderEventDB.SaveOrderCreatedEvent(ctx, e)
-	if err != nil {
-		return err
-	}
-
+	fmt.Println("HandleOrderCreated", e)
 	return nil
 }
 
@@ -41,11 +35,7 @@ func (h *OrderEventHandler) HandleOrderConfirmed(ctx context.Context, evt evt_mo
 		return errUnknownEventFormat
 	}
 
-	err := h.orderEventDB.SaveOrderConfirmedEvent(ctx, e)
-	if err != nil {
-		return err
-	}
-
+	fmt.Println("HandleOrderConfirmed", e)
 	return nil
 }
 
@@ -57,11 +47,7 @@ func (h *OrderEventHandler) HandleOrderShipped(ctx context.Context, evt evt_mode
 		return errUnknownEventFormat
 	}
 
-	err := h.orderEventDB.SaveOrderShippedEvent(ctx, e)
-	if err != nil {
-		return err
-	}
-
+	fmt.Println("HandleOrderShipped", e)
 	return nil
 }
 
@@ -73,11 +59,7 @@ func (h *OrderEventHandler) HandleOrderCancelled(ctx context.Context, evt evt_mo
 		return errUnknownEventFormat
 	}
 
-	err := h.orderEventDB.SaveOrderCancelledEvent(ctx, e)
-	if err != nil {
-		return err
-	}
-
+	fmt.Println("HandleOrderCancelled", e)
 	return nil
 }
 
@@ -89,10 +71,6 @@ func (h *OrderEventHandler) HandleOrderRefunded(ctx context.Context, evt evt_mod
 		return errUnknownEventFormat
 	}
 
-	err := h.orderEventDB.SaveOrderRefundedEvent(ctx, e)
-	if err != nil {
-		return err
-	}
-
+	fmt.Println("HandleOrderRefunded", e)
 	return nil
 }

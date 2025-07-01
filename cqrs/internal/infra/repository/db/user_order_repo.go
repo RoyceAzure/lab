@@ -9,10 +9,13 @@ type UserOrderRepo struct {
 }
 
 func NewUserOrderRepo(dbDao *DbDao) *UserOrderRepo {
+	if dbDao == nil {
+		panic("UserOrderRepo dependency dbDao is nil")
+	}
 	return &UserOrderRepo{dbDao: dbDao}
 }
 
-// GetUserOrderByID - 根據 ID 查詢用戶訂單關聯
+// GetUserOrderByID - 根據 orderID 查詢用戶訂單關聯
 func (r *UserOrderRepo) GetUserOrderByID(id int) (*model.UserOrder, error) {
 	var userOrder model.UserOrder
 	err := r.dbDao.First(&userOrder, id).Error

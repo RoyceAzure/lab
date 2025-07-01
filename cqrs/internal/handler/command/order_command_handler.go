@@ -12,7 +12,7 @@ import (
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/eventdb"
 	"github.com/RoyceAzure/lab/cqrs/internal/pkg/util"
 	"github.com/RoyceAzure/lab/cqrs/internal/service"
-	"github.com/google/uuid"
+	"github.com/RoyceAzure/lab/rj_kafka/kafka/producer"
 )
 
 type OrrderCommandError error
@@ -22,15 +22,16 @@ var (
 )
 
 type OrderCommandHandler struct {
-	userService  *service.UserService
-	eventDao     *eventdb.EventDao
-	productRepo  *db.ProductRepo
-	orderService *service.OrderService
+	userService          *service.UserService
+	eventDao             *eventdb.EventDao
+	productRepo          *db.ProductRepo
+	orderService         *service.OrderService
+	toOrderEventProducer producer.Producer
 }
 
 // 只處理Order, 不處理Cart
-func NewOrderCommandHandler(orderService *service.OrderService, userService *service.UserService, eventDao *eventdb.EventDao, productRepo *db.ProductRepo) *OrderCommandHandler {
-	return &OrderCommandHandler{orderService: orderService, userService: userService, eventDao: eventDao, productRepo: productRepo}
+func NewOrderCommandHandler(orderService *service.OrderService, userService *service.UserService, eventDao *eventdb.EventDao, productRepo *db.ProductRepo, toOrderEventProducer producer.Producer) *OrderCommandHandler {
+	return &OrderCommandHandler{orderService: orderService, userService: userService, eventDao: eventDao, productRepo: productRepo, toOrderEventProducer: toOrderEventProducer}
 }
 
 // 驗證命令
@@ -54,24 +55,10 @@ func (h *OrderCommandHandler) HandleOrderCreated(ctx context.Context, cmd cmd_mo
 		return err
 	}
 
-	orderID := util.GenerateOrderID()
-	eventID := uuid.New().String()
-	orderCreatedEvent := evt_model.OrderCreatedEvent{
-		BaseEvent: evt_model.BaseEvent{
-			EventID:     eventID,
-			AggregateID: util.GenerateOrderAggregateID(orderID),
-			EventType:   evt_model.OrderCreatedEventName,
-			CreatedAt:   time.Now().UTC(),
-		},
-		Items:     c.Items,
-		Amount:    amount,
-		UserID:    c.UserID,
-		OrderID:   orderID,
-		OrderDate: time.Now().UTC(),
-		ToState:   model.OrderStatusPending,
-	}
+	orderID := util.GenerateOrderIDByTimestamp()
+	orderCreatedEvent := evt_model.NewOrderCreatedEvent(orderID, c.UserID, orderID, time.Now().UTC(), c.Items, amount, model.OrderStatusPending)
 
-	err = h.eventDao.AppendEvent(ctx, orderCreatedEvent.AggregateID, string(evt_model.OrderCreatedEventName), orderCreatedEvent)
+	err = h.eventDao.AppendEvent(ctx, orderCreatedEvent.EventID, eventdb.GenerateOrderStreamID(orderID), string(evt_model.OrderCreatedEventName), orderCreatedEvent)
 	if err != nil {
 		return err
 	}
@@ -102,18 +89,9 @@ func (h *OrderCommandHandler) HandleOrderConfirmed(ctx context.Context, cmd cmd_
 		return err
 	}
 
-	eventID := uuid.New().String()
-	orderConfirmedEvent := evt_model.OrderConfirmedEvent{
-		BaseEvent: evt_model.BaseEvent{
-			EventID:     eventID,
-			AggregateID: util.GenerateOrderAggregateID(order.OrderID),
-			EventType:   evt_model.OrderConfirmedEventName,
-			CreatedAt:   time.Now().UTC(),
-		},
-		FromState: model.OrderStatusPending,
-		ToState:   model.OrderStatusConfirmed,
-	}
-	err = h.eventDao.AppendEvent(ctx, orderConfirmedEvent.AggregateID, string(evt_model.OrderConfirmedEventName), orderConfirmedEvent)
+	orderConfirmedEvent := evt_model.NewOrderConfirmedEvent(order.OrderID, model.OrderStatusPending, model.OrderStatusConfirmed)
+
+	err = h.eventDao.AppendEvent(ctx, orderConfirmedEvent.EventID, eventdb.GenerateOrderStreamID(order.OrderID), string(evt_model.OrderConfirmedEventName), orderConfirmedEvent)
 	if err != nil {
 		return err
 	}
@@ -142,21 +120,9 @@ func (h *OrderCommandHandler) OrderShippedCommand(ctx context.Context, cmd cmd_m
 	//驗證TrackingCode
 	//驗證Carrier
 
-	eventID := uuid.New().String()
-	orderShippedEvent := evt_model.OrderShippedEvent{
-		BaseEvent: evt_model.BaseEvent{
-			EventID:     eventID,
-			AggregateID: util.GenerateOrderAggregateID(order.OrderID),
-			EventType:   evt_model.OrderShippedEventName,
-			CreatedAt:   time.Now().UTC(),
-		},
-		TrackingCode: c.TrackingCode,
-		Carrier:      c.Carrier,
-		FromState:    model.OrderStatusConfirmed,
-		ToState:      model.OrderStatusShipped,
-	}
+	orderShippedEvent := evt_model.NewOrderShippedEvent(order.OrderID, c.TrackingCode, c.Carrier, model.OrderStatusConfirmed, model.OrderStatusShipped)
 
-	err = h.eventDao.AppendEvent(ctx, orderShippedEvent.AggregateID, string(evt_model.OrderShippedEventName), orderShippedEvent)
+	err = h.eventDao.AppendEvent(ctx, orderShippedEvent.EventID, eventdb.GenerateOrderStreamID(order.OrderID), string(evt_model.OrderShippedEventName), orderShippedEvent)
 	if err != nil {
 		return err
 	}
@@ -182,21 +148,14 @@ func (h *OrderCommandHandler) OrderCancelledCommand(ctx context.Context, cmd cmd
 		return err
 	}
 
-	eventID := uuid.New().String()
+	orderCancelledEvent := evt_model.NewOrderCancelledEvent(order.OrderID, c.Message, model.OrderStatusConfirmed, model.OrderStatusCancelled)
 
-	orderCancelledEvent := evt_model.OrderCancelledEvent{
-		BaseEvent: evt_model.BaseEvent{
-			EventID:     eventID,
-			AggregateID: util.GenerateOrderAggregateID(order.OrderID),
-			EventType:   evt_model.OrderCancelledEventName,
-			CreatedAt:   time.Now().UTC(),
-		},
-		Message:   c.Message,
-		FromState: model.OrderStatusConfirmed,
-		ToState:   model.OrderStatusCancelled,
+	err = h.eventDao.AppendEvent(ctx, orderCancelledEvent.EventID, eventdb.GenerateOrderStreamID(order.OrderID), string(evt_model.OrderCancelledEventName), orderCancelledEvent)
+	if err != nil {
+		return err
 	}
 
-	err = h.eventDao.AppendEvent(ctx, orderCancelledEvent.AggregateID, string(evt_model.OrderCancelledEventName), orderCancelledEvent)
+	err = h.eventDao.AppendEvent(ctx, orderCancelledEvent.EventID, eventdb.GenerateOrderStreamID(order.OrderID), string(evt_model.OrderCancelledEventName), orderCancelledEvent)
 	if err != nil {
 		return err
 	}
@@ -227,20 +186,14 @@ func (h *OrderCommandHandler) OrderRefundedCommand(ctx context.Context, cmd cmd_
 		return err
 	}
 
-	eventID := uuid.New().String()
-	orderRefundedEvent := evt_model.OrderRefundedEvent{
-		BaseEvent: evt_model.BaseEvent{
-			EventID:     eventID,
-			AggregateID: util.GenerateOrderAggregateID(order.OrderID),
-			EventType:   evt_model.OrderRefundedEventName,
-			CreatedAt:   time.Now().UTC(),
-		},
-		Amount:    amount,
-		FromState: model.OrderStatusShipped,
-		ToState:   model.OrderStatusRefunded,
+	orderRefundedEvent := evt_model.NewOrderRefundedEvent(order.OrderID, amount, model.OrderStatusShipped, model.OrderStatusRefunded)
+
+	err = h.eventDao.AppendEvent(ctx, orderRefundedEvent.EventID, eventdb.GenerateOrderStreamID(order.OrderID), string(evt_model.OrderRefundedEventName), orderRefundedEvent)
+	if err != nil {
+		return err
 	}
 
-	err = h.eventDao.AppendEvent(ctx, orderRefundedEvent.AggregateID, string(evt_model.OrderRefundedEventName), orderRefundedEvent)
+	err = h.eventDao.AppendEvent(ctx, orderRefundedEvent.EventID, eventdb.GenerateOrderStreamID(order.OrderID), string(evt_model.OrderRefundedEventName), orderRefundedEvent)
 	if err != nil {
 		return err
 	}

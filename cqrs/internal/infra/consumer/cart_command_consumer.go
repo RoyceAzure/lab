@@ -48,6 +48,12 @@ func (c *CartCommandConsumer) transformData(msg message.Message) (consumeData, e
 		if err != nil {
 			return zero, err
 		}
+	case cmd_model.CartConfirmedCommandName:
+		cmd = &cmd_model.CartConfirmedCommand{}
+		err := json.Unmarshal(msg.Value, &cmd)
+		if err != nil {
+			return zero, err
+		}
 	default:
 		return zero, ErrUnknownCommandFormat
 	}

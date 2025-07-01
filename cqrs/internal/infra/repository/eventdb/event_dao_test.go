@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/EventStore/EventStore-Client-Go/v4/esdb"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -40,7 +41,7 @@ func TestEventDao(t *testing.T) {
 		Amount:    "999.99",
 		OrderDate: time.Now(),
 	}
-	err = dao.AppendEvent(context.Background(), streamID, "OrderCreated", event)
+	err = dao.AppendEvent(context.Background(), uuid.New(), streamID, "OrderCreated", event)
 	require.NoError(t, err, "寫入事件失敗")
 
 	// 讀取事件測試

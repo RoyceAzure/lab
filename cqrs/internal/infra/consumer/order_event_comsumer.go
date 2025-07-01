@@ -10,15 +10,17 @@ import (
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/message"
 )
 
-type CartEventConsumer struct {
+type OrderEventConsumer struct {
 	*handlerAdapter
 }
 
-func NewCartEventConsumer(consumer consumer.Consumer, cartEventHandler event_handler.Handler) IBaseConsumer {
-	return newBaseConsumer(consumer, &CartEventConsumer{newHandlerAdapter(nil, cartEventHandler)})
+// topic: order-event
+// 分區: userID
+func NewOrderEventConsumer(consumer consumer.Consumer, orderEventHandler event_handler.Handler) IBaseConsumer {
+	return newBaseConsumer(consumer, &OrderEventConsumer{newHandlerAdapter(nil, orderEventHandler)})
 }
 
-func (c *CartEventConsumer) transformData(msg message.Message) (consumeData, error) {
+func (c *OrderEventConsumer) transformData(msg message.Message) (consumeData, error) {
 	headers := msg.Headers
 	var eventType evt_model.EventType
 	for _, header := range headers {
@@ -31,32 +33,32 @@ func (c *CartEventConsumer) transformData(msg message.Message) (consumeData, err
 	var evt evt_model.Event
 	var zero consumeData
 	switch eventType {
-	case evt_model.CartCreatedEventName:
-		evt = &evt_model.CartCreatedEvent{}
+	case evt_model.OrderCreatedEventName:
+		evt = &evt_model.OrderCreatedEvent{}
 		err := json.Unmarshal(msg.Value, &evt)
 		if err != nil {
 			return zero, err
 		}
-	case evt_model.CartUpdatedEventName:
-		evt = &evt_model.CartUpdatedEvent{}
+	case evt_model.OrderConfirmedEventName:
+		evt = &evt_model.OrderConfirmedEvent{}
 		err := json.Unmarshal(msg.Value, &evt)
 		if err != nil {
 			return zero, err
 		}
-	case evt_model.CartDeletedEventName:
-		evt = &evt_model.CartDeletedEvent{}
+	case evt_model.OrderShippedEventName:
+		evt = &evt_model.OrderShippedEvent{}
 		err := json.Unmarshal(msg.Value, &evt)
 		if err != nil {
 			return zero, err
 		}
-	case evt_model.CartFailedEventName:
-		evt = &evt_model.CartFailedEvent{}
+	case evt_model.OrderCancelledEventName:
+		evt = &evt_model.OrderCancelledEvent{}
 		err := json.Unmarshal(msg.Value, &evt)
 		if err != nil {
 			return zero, err
 		}
-	case evt_model.CartConfirmedEventName:
-		evt = &evt_model.CartConfirmedEvent{}
+	case evt_model.OrderRefundedEventName:
+		evt = &evt_model.OrderRefundedEvent{}
 		err := json.Unmarshal(msg.Value, &evt)
 		if err != nil {
 			return zero, err

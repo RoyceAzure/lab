@@ -14,7 +14,7 @@ func NewCartBalancer(numPartitions int) IBaseBalancer {
 	return &CartBalancer{numPartitions: numPartitions}
 }
 
-// 購物車command 使用userid做key，所以使用userid做partition
+// 購物車command 使用userid做key，kafka msgkey必須是userid，所以使用userid做partition
 func (c *CartBalancer) Balance(msg kafka.Message, partitions ...int) (partition int) {
 	userID, err := strconv.Atoi(string(msg.Key))
 	if err != nil {

@@ -19,6 +19,9 @@ type CartRepo struct {
 }
 
 func NewCartRepo(cartCache *redis.Client) *CartRepo {
+	if cartCache == nil {
+		panic("CartRepo dependency cartCache is nil")
+	}
 	return &CartRepo{CartCache: cartCache}
 }
 
@@ -160,7 +163,8 @@ func (r *CartRepo) Delete(ctx context.Context, userID int, productID string) err
 	return nil
 }
 
-// Clear 清空購物車
+// Clear 清空購物車items
+// 不會清空購物車本體資料
 func (r *CartRepo) Clear(ctx context.Context, userID int) error {
 	itemsKey := generateCartItemKey(userID)
 

@@ -6,6 +6,9 @@ import (
 	"fmt"
 
 	cmd_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/command"
+	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db"
+	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/eventdb"
+	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/redis_repo"
 	"github.com/RoyceAzure/lab/cqrs/internal/service"
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/producer"
 	"github.com/redis/go-redis/v9"
@@ -66,13 +69,14 @@ func NewOrderHandler(orderHandler *OrderCommandHandler) Handler {
 	}
 }
 
-func NewCartCommandHandler(userService *service.UserService, productService *service.ProductService, kafkaProducer producer.Producer) Handler {
-	cartHandler := newCartCommandHandler(userService, productService, kafkaProducer)
+func NewCartCommandHandler(userService *service.UserService, productService *service.ProductService, cartRepo *redis_repo.CartRepo, userOrderRepo *db.UserOrderRepo, eventDB *eventdb.EventDao, kafkaProducer producer.Producer) Handler {
+	cartHandler := newCartCommandHandler(userService, productService, cartRepo, userOrderRepo, eventDB, kafkaProducer)
 	return &HandlerDispatcher{
 		handlers: map[cmd_model.CommandType]Handler{
-			cmd_model.CartCreatedCommandName: HandlerFunc(cartHandler.HandleCartCreated),
-			cmd_model.CartUpdatedCommandName: HandlerFunc(cartHandler.HandleCartUpdated),
-			cmd_model.CartDeletedCommandName: HandlerFunc(cartHandler.HandleCartDeleted),
+			cmd_model.CartCreatedCommandName:   HandlerFunc(cartHandler.HandleCartCreated),
+			cmd_model.CartUpdatedCommandName:   HandlerFunc(cartHandler.HandleCartUpdated),
+			cmd_model.CartDeletedCommandName:   HandlerFunc(cartHandler.HandleCartDeleted),
+			cmd_model.CartConfirmedCommandName: HandlerFunc(cartHandler.HandleCartConfirmed),
 		},
 	}
 }

@@ -45,3 +45,19 @@ func (s *ProductService) SubProductStock(ctx context.Context, productID string, 
 	_, err := s.productRepo.DeductProductStock(ctx, productID, quantity)
 	return err
 }
+
+// 將購物車的商品資訊轉換為訂單的商品資訊
+// func (s *ProductService) CacheOrderToOrderItemData(cartCache *model.Cart) []model.OrderItemData {
+// 	orderItems := make([]model.OrderItemData, len(cartCache.OrderItems))
+// 	for i, item := range cartCache.OrderItems {
+// 		product, err := s.productRepo.GetProductStock(ctx, item.ProductID)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 		orderItems[i] = model.OrderItemData{
+// 			ProductID: item.ProductID,
+// 			Quantity:  item.Quantity,
+// 		}
+// 	}
+// 	return orderItems
+// }

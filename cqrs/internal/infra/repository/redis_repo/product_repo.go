@@ -48,6 +48,16 @@ func (s *ProductRepo) CreateProductStock(ctx context.Context, productID string, 
 	return nil
 }
 
+// // 取得商品資訊q
+// func (s *ProductRepo) GetProduct(ctx context.Context, productID string) (*model.Product, error) {
+// 	redisKey := generateProductStockKey(productID)
+// 	product, err := s.productCache.HGet(ctx, redisKey, "product").Result()
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	return product, nil
+// }
+
 // 取得 庫存商品數量
 // 錯誤:
 //   - ProductNotFound: 商品不存在

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	evt_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/event"
+	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/eventdb"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/redis_repo"
 	"github.com/redis/go-redis/v9"
 )
@@ -53,12 +54,15 @@ func (d *HandlerDispatcher) HandleEvent(ctx context.Context, evt evt_model.Event
 	return handler.HandleEvent(ctx, evt)
 }
 
-func NewOrderEventHandlerDispatcher(orderEventHandler *OrderEventHandler) Handler {
+func NewOrderEventHandler(orderEventDB *eventdb.EventDao) Handler {
+	orderEventHandler := newOrderEventHandler(orderEventDB)
 	return &HandlerDispatcher{
 		handlers: map[evt_model.EventType]Handler{
 			evt_model.OrderCreatedEventName:   HandlerFunc(orderEventHandler.HandleOrderCreated),
 			evt_model.OrderConfirmedEventName: HandlerFunc(orderEventHandler.HandleOrderConfirmed),
 			evt_model.OrderShippedEventName:   HandlerFunc(orderEventHandler.HandleOrderShipped),
+			evt_model.OrderCancelledEventName: HandlerFunc(orderEventHandler.HandleOrderCancelled),
+			evt_model.OrderRefundedEventName:  HandlerFunc(orderEventHandler.HandleOrderRefunded),
 		},
 	}
 }

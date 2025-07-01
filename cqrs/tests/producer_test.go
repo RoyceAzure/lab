@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/EventStore/EventStore-Client-Go/v4/esdb"
 	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
 	cmd_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/command"
 	command_handler "github.com/RoyceAzure/lab/cqrs/internal/handler/command"
@@ -16,6 +17,7 @@ import (
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/producer"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/producer/balancer"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db"
+	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/eventdb"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/redis_repo"
 	"github.com/RoyceAzure/lab/cqrs/internal/service"
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/admin"
@@ -32,16 +34,21 @@ import (
 var (
 	testClusterConfig *admin.ClusterConfig
 
-	ConsumerGroupPrefix    = fmt.Sprintf("test-cqrs-group")
-	CartCmdConsumerGroup   = fmt.Sprintf("%s-cart-cmd", ConsumerGroupPrefix)
-	CartEventConsumerGroup = fmt.Sprintf("%s-cart-evt", ConsumerGroupPrefix)
+	ConsumerGroupPrefix     = fmt.Sprintf("test-cqrs-group")
+	CartCmdConsumerGroup    = fmt.Sprintf("%s-cart-cmd", ConsumerGroupPrefix)
+	CartEventConsumerGroup  = fmt.Sprintf("%s-cart-evt", ConsumerGroupPrefix)
+	OrderEventConsumerGroup = fmt.Sprintf("%s-order-evt", ConsumerGroupPrefix)
 
-	TopicPrefix        = fmt.Sprintf("test-cqrs-topic")
-	CartCmdTopicName   = fmt.Sprintf("%s-cart-cmd-%d", TopicPrefix, time.Now().UnixNano())
-	CartEventTopicName = fmt.Sprintf("%s-cart-evt-%d", TopicPrefix, time.Now().UnixNano())
+	TopicPrefix         = fmt.Sprintf("test-cqrs-topic")
+	CartCmdTopicName    = fmt.Sprintf("%s-cart-cmd-%d", TopicPrefix, time.Now().UnixNano())
+	CartEventTopicName  = fmt.Sprintf("%s-cart-evt-%d", TopicPrefix, time.Now().UnixNano())
+	OrderEventTopicName = fmt.Sprintf("%s-order-evt-%d", TopicPrefix, time.Now().UnixNano())
 
-	ProductNum = 50
-	UserNum    = 10000
+	//projection 固定用一個處理order category就可以
+	OrderProjectionName = "test-order-projection"
+
+	ProductNum = 10
+	UserNum    = 100
 )
 
 var kafkaConfigTemplate kafka_config.Config
@@ -137,10 +144,14 @@ type ProducerTestSuite struct {
 	suite.Suite
 	dbDao                 *db.DbDao
 	userRepo              *db.UserRepo
+	userOrderRepo         *db.UserOrderRepo
 	productRepo           *redis_repo.ProductRepo
+	orderEventDB          *eventdb.EventDao
 	userService           *service.UserService
 	productService        *service.ProductService
+	orderService          *service.OrderService
 	cartRepo              *redis_repo.CartRepo
+	orderEventHandler     event_handler.Handler
 	cartEventHandler      event_handler.Handler
 	cartCommandHandler    command_handler.Handler
 	cartCommandProducer   *producer.CartCommandProducer //for測試使用者發送命令
@@ -148,6 +159,7 @@ type ProducerTestSuite struct {
 	cartEventConsumers    []consumer.IBaseConsumer
 	toCartCommandProducer kafka_producer.Producer //for測試使用者發送命令
 	toCartEventProducer   kafka_producer.Producer //for cart command handler
+	orderEventDBQueryDao  *eventdb.EventDBQueryDao
 
 	redisClient *redis.Client
 	// 測試資料
@@ -190,8 +202,11 @@ func (suite *ProducerTestSuite) SetupSuite() {
 	require.NoError(suite.T(), err)
 
 	// 初始化 repositories
+	suite.setupOrderEventDBQueryDao()
+
 	suite.userRepo = db.NewUserRepo(suite.dbDao)
 	suite.productRepo = redis_repo.NewProductRepo(suite.redisClient)
+	suite.userOrderRepo = db.NewUserOrderRepo(suite.dbDao)
 	suite.cartRepo = redis_repo.NewCartRepo(suite.redisClient)
 	suite.userService = service.NewUserService(suite.userRepo)
 	suite.productService = service.NewProductService(suite.productRepo)
@@ -199,6 +214,7 @@ func (suite *ProducerTestSuite) SetupSuite() {
 	suite.setupCartCommandProducer()
 	suite.setupCartEventConsumer()
 	suite.setupCartCommandConsumer()
+
 	suite.T().Log("=== SetupSuite: 測試套件設置完成 ===")
 }
 
@@ -285,6 +301,11 @@ func (suite *ProducerTestSuite) TearDownTest() {
 		require.NoError(suite.T(), err)
 	}
 
+	// 清理user order
+	for _, user := range suite.testUsers {
+		suite.userOrderRepo.HardDeleteUserOrder(user.UserID)
+	}
+
 	// 等待一段時間確保所有連接都已正確關閉
 	time.Sleep(2 * time.Second)
 
@@ -355,6 +376,26 @@ func (suite *ProducerTestSuite) setupCartCommandProducer() {
 	suite.cartCommandProducer = producer.NewCartCommandProducer(suite.toCartCommandProducer)
 }
 
+// set up order event db query dao
+func (suite *ProducerTestSuite) setupOrderEventDBQueryDao() {
+	// 設置 EventStore 客戶端
+	settings, err := esdb.ParseConnectionString("esdb://localhost:2113?tls=false&keepAliveTimeout=10000")
+	require.NoError(suite.T(), err)
+
+	client, err := esdb.NewClient(settings)
+	require.NoError(suite.T(), err)
+
+	projectionClient, err := esdb.NewProjectionClient(settings)
+	require.NoError(suite.T(), err)
+
+	// 初始化 orderEventDB
+	suite.orderEventDB = eventdb.NewEventDao(client)
+
+	suite.orderEventDBQueryDao = eventdb.NewEventDBQueryDao(projectionClient, client)
+
+	suite.orderEventDBQueryDao.CreateOrderProjection(context.Background(), OrderProjectionName)
+}
+
 func (suite *ProducerTestSuite) setupCartCommandHandler() {
 	if suite.toCartEventProducer == nil {
 		suite.setupToForCartEventProducer()
@@ -362,7 +403,14 @@ func (suite *ProducerTestSuite) setupCartCommandHandler() {
 	if suite.toCartEventProducer == nil {
 		suite.T().Fatalf("kafkaProducer for cart command handler is not initialized")
 	}
-	suite.cartCommandHandler = command_handler.NewCartCommandHandler(suite.userService, suite.productService, suite.toCartEventProducer)
+	suite.cartCommandHandler = command_handler.NewCartCommandHandler(
+		suite.userService,
+		suite.productService,
+		suite.cartRepo,
+		suite.userOrderRepo,
+		suite.orderEventDB,
+		suite.toCartEventProducer,
+	)
 }
 
 // 設置cart command handler
@@ -466,6 +514,10 @@ func (suite *ProducerTestSuite) simulateUserCartOperations(ctx context.Context, 
 			return
 		case <-timer.C:
 			// suite.printUserProductQuantities(userID, userProductQuantities)
+			// 發送確認命令
+			if err := suite.cartCommandProducer.ProduceCartConfirmedCommand(ctx, userID); err != nil {
+				errChan <- fmt.Errorf("failed to confirm cart for user %d: %w", userID, err)
+			}
 			return
 		default:
 			// 隨機等待 100-300ms，避免請求太密集
@@ -544,8 +596,8 @@ func (suite *ProducerTestSuite) TestConcurrentCartOperations() {
 	suite.T().Logf("all users cart operations completed")
 
 	//驗證階段
-	// 等待一段時間讓事件被處理
-	time.Sleep(20 * time.Second)
+	// 等待一段時間讓事件，projection被處理
+	time.Sleep(40 * time.Second)
 
 	// 1. 獲取所有商品的當前庫存
 	currentStocks := make(map[string]uint)
@@ -555,13 +607,50 @@ func (suite *ProducerTestSuite) TestConcurrentCartOperations() {
 		currentStocks[product.ProductID] = stock
 	}
 
-	// 2. 獲取所有使用者的購物車內容
+	// 2. 獲取所有使用者的購物車內容，並驗證訂單
 	cartQuantities := make(map[string]uint)
 	for _, user := range suite.testUsers {
+		// 檢查購物車內容
 		cart, err := suite.cartRepo.Get(ctx, user.UserID)
 		if err != nil {
 			continue // 跳過空購物車
 		}
+
+		// 檢查訂單內容
+		userOrders, err := suite.userOrderRepo.ListUserOrdersByUserID(user.UserID)
+		require.NoError(suite.T(), err)
+		//測試情況下，使用者只會有一筆訂單
+		require.Equal(suite.T(), 1, len(userOrders))
+
+		// 取得訂單詳細內容
+		orderID := userOrders[0].OrderID
+		order, err := suite.orderEventDBQueryDao.GetOrderState(ctx, OrderProjectionName, orderID)
+		require.NoError(suite.T(), err)
+
+		// 驗證訂單基本資訊
+		require.Equal(suite.T(), user.UserID, order.UserID, "Order UserID mismatch")
+
+		// 驗證訂單內容與購物車內容一致
+		require.Equal(suite.T(), len(cart.OrderItems), len(order.OrderItems),
+			"Order items count should match cart items count for user %d", user.UserID)
+
+		// 建立訂單項目的 map 以便比較
+		orderItemMap := make(map[string]int)
+		for _, item := range order.OrderItems {
+			orderItemMap[item.ProductID] = item.Quantity
+		}
+		// 比較購物車和訂單中的每個商品
+		for _, cartItem := range cart.OrderItems {
+			orderQuantity, exists := orderItemMap[cartItem.ProductID]
+			require.True(suite.T(), exists,
+				"Product %s in cart should exist in order for user %d",
+				cartItem.ProductID, user.UserID)
+			require.Equal(suite.T(), cartItem.Quantity, orderQuantity,
+				"Product %s quantity mismatch between cart and order for user %d",
+				cartItem.ProductID, user.UserID)
+		}
+
+		// 累計商品總數量
 		for _, item := range cart.OrderItems {
 			cartQuantities[item.ProductID] += uint(item.Quantity)
 		}
@@ -577,6 +666,6 @@ func (suite *ProducerTestSuite) TestConcurrentCartOperations() {
 			productID, initialStock, currentStock, inCarts)
 
 		require.Equal(suite.T(), initialStock-currentStock, inCarts,
-			"Product %s: stock difference should equal total in carts", productID)
+			"Product %s: stock difference should equal tota/l in carts", productID)
 	}
 }

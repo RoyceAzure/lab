@@ -7,6 +7,15 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+type OrderState uint
+
+const (
+	OrderStateCreated OrderState = iota
+	OrderStateConfirmed
+	OrderStateShipped
+	OrderStateCancelled
+)
+
 // 訂單聚合
 // 訂單階段  OrderItems不會變動
 // 訂單階段  只有state 會變動
@@ -34,6 +43,18 @@ type OrderCreatedEvent struct {
 	ToState   uint                  `json:"to_state"`
 }
 
+func NewOrderCreatedEvent(aggregateID string, userID int, orderID string, orderDate time.Time, items []model.OrderItemData, amount decimal.Decimal, toState uint) *OrderCreatedEvent {
+	return &OrderCreatedEvent{
+		BaseEvent: *NewBaseEvent(aggregateID, OrderCreatedEventName),
+		UserID:    userID,
+		OrderID:   orderID,
+		OrderDate: orderDate,
+		Items:     items,
+		Amount:    amount,
+		ToState:   toState,
+	}
+}
+
 func (e *OrderCreatedEvent) Type() EventType {
 	return OrderCreatedEventName
 }
@@ -42,6 +63,14 @@ type OrderConfirmedEvent struct {
 	BaseEvent
 	FromState uint `json:"from_state"`
 	ToState   uint `json:"to_state"`
+}
+
+func NewOrderConfirmedEvent(aggregateID string, fromState uint, toState uint) *OrderConfirmedEvent {
+	return &OrderConfirmedEvent{
+		BaseEvent: *NewBaseEvent(aggregateID, OrderConfirmedEventName),
+		FromState: fromState,
+		ToState:   toState,
+	}
 }
 
 func (e *OrderConfirmedEvent) Type() EventType {
@@ -56,6 +85,15 @@ type OrderShippedEvent struct {
 	ToState      uint   `json:"to_state"`
 }
 
+func NewOrderShippedEvent(aggregateID string, trackingCode string, carrier string, fromState uint, toState uint) *OrderShippedEvent {
+	return &OrderShippedEvent{
+		BaseEvent:    *NewBaseEvent(aggregateID, OrderShippedEventName),
+		TrackingCode: trackingCode,
+		Carrier:      carrier,
+		FromState:    fromState,
+		ToState:      toState,
+	}
+}
 func (e *OrderShippedEvent) Type() EventType {
 	return OrderShippedEventName
 }
@@ -67,6 +105,14 @@ type OrderCancelledEvent struct {
 	ToState   uint   `json:"to_state"`
 }
 
+func NewOrderCancelledEvent(aggregateID string, message string, fromState uint, toState uint) *OrderCancelledEvent {
+	return &OrderCancelledEvent{
+		BaseEvent: *NewBaseEvent(aggregateID, OrderCancelledEventName),
+		Message:   message,
+		FromState: fromState,
+		ToState:   toState,
+	}
+}
 func (e *OrderCancelledEvent) Type() EventType {
 	return OrderCancelledEventName
 }
@@ -78,6 +124,14 @@ type OrderRefundedEvent struct {
 	ToState   uint            `json:"to_state"`
 }
 
+func NewOrderRefundedEvent(aggregateID string, amount decimal.Decimal, fromState uint, toState uint) *OrderRefundedEvent {
+	return &OrderRefundedEvent{
+		BaseEvent: *NewBaseEvent(aggregateID, OrderRefundedEventName),
+		Amount:    amount,
+		FromState: fromState,
+		ToState:   toState,
+	}
+}
 func (e *OrderRefundedEvent) Type() EventType {
 	return OrderRefundedEventName
 }

@@ -15,7 +15,7 @@ var ErrNonOrderEvent EventFormatError = errors.New("non order event")
 // 後續應該統一給app層 order service 處理
 
 func (dao *EventDao) SaveOrderCreatedEvent(ctx context.Context, data *evt_model.OrderCreatedEvent) error {
-	isOrderEvent, err := dao.checkBaseOrderEvent(*data)
+	isOrderEvent, err := dao.checkBaseOrderEvent(data.BaseEvent)
 	if err != nil {
 		return err
 	}
@@ -24,11 +24,11 @@ func (dao *EventDao) SaveOrderCreatedEvent(ctx context.Context, data *evt_model.
 		return ErrNonOrderEvent
 	}
 
-	return dao.AppendEvent(ctx, data.AggregateID, string(data.Type()), data)
+	return dao.AppendEvent(ctx, data.EventID, GenerateOrderStreamID(data.AggregateID), string(data.Type()), data)
 }
 
 func (dao *EventDao) SaveOrderConfirmedEvent(ctx context.Context, data *evt_model.OrderConfirmedEvent) error {
-	isOrderEvent, err := dao.checkBaseOrderEvent(*data)
+	isOrderEvent, err := dao.checkBaseOrderEvent(data.BaseEvent)
 	if err != nil {
 		return err
 	}
@@ -37,11 +37,11 @@ func (dao *EventDao) SaveOrderConfirmedEvent(ctx context.Context, data *evt_mode
 		return ErrNonOrderEvent
 	}
 
-	return dao.AppendEvent(ctx, data.AggregateID, string(data.Type()), data)
+	return dao.AppendEvent(ctx, data.EventID, GenerateOrderStreamID(data.AggregateID), string(data.Type()), data)
 }
 
 func (dao *EventDao) SaveOrderShippedEvent(ctx context.Context, data *evt_model.OrderShippedEvent) error {
-	isOrderEvent, err := dao.checkBaseOrderEvent(*data)
+	isOrderEvent, err := dao.checkBaseOrderEvent(data.BaseEvent)
 	if err != nil {
 		return err
 	}
@@ -50,11 +50,11 @@ func (dao *EventDao) SaveOrderShippedEvent(ctx context.Context, data *evt_model.
 		return ErrNonOrderEvent
 	}
 
-	return dao.AppendEvent(ctx, data.AggregateID, string(data.Type()), data)
+	return dao.AppendEvent(ctx, data.EventID, GenerateOrderStreamID(data.AggregateID), string(data.Type()), data)
 }
 
 func (dao *EventDao) SaveOrderCancelledEvent(ctx context.Context, data *evt_model.OrderCancelledEvent) error {
-	isOrderEvent, err := dao.checkBaseOrderEvent(*data)
+	isOrderEvent, err := dao.checkBaseOrderEvent(data.BaseEvent)
 	if err != nil {
 		return err
 	}
@@ -63,11 +63,11 @@ func (dao *EventDao) SaveOrderCancelledEvent(ctx context.Context, data *evt_mode
 		return ErrNonOrderEvent
 	}
 
-	return dao.AppendEvent(ctx, data.AggregateID, string(data.Type()), data)
+	return dao.AppendEvent(ctx, data.EventID, GenerateOrderStreamID(data.AggregateID), string(data.Type()), data)
 }
 
 func (dao *EventDao) SaveOrderRefundedEvent(ctx context.Context, data *evt_model.OrderRefundedEvent) error {
-	isOrderEvent, err := dao.checkBaseOrderEvent(*data)
+	isOrderEvent, err := dao.checkBaseOrderEvent(data.BaseEvent)
 	if err != nil {
 		return err
 	}
@@ -76,7 +76,7 @@ func (dao *EventDao) SaveOrderRefundedEvent(ctx context.Context, data *evt_model
 		return ErrNonOrderEvent
 	}
 
-	return dao.AppendEvent(ctx, data.AggregateID, string(data.Type()), data)
+	return dao.AppendEvent(ctx, data.EventID, GenerateOrderStreamID(data.AggregateID), string(data.Type()), data)
 }
 
 func (dao *EventDao) checkBaseOrderEvent(base any) (bool, error) {

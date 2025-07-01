@@ -6,20 +6,25 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
 	cmd_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/command"
 	evt_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/event"
+	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db"
+	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/eventdb"
+	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/redis_repo"
+	"github.com/RoyceAzure/lab/cqrs/internal/pkg/util"
 	"github.com/RoyceAzure/lab/cqrs/internal/service"
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/message"
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/producer"
-	"github.com/google/uuid"
 )
 
 type CartCommandError error
 
 var (
-	errCartCommand CartCommandError = errors.New("cart_command_format_error")
+	errCartCommand           CartCommandError = errors.New("cart_command_format_error")
+	errUserOrderCreateFailed CartCommandError = errors.New("user_order_create_failed")
 )
 
 // 購物車命令處理器
@@ -27,14 +32,51 @@ var (
 // 發送cart event 到kafka，由cart event handler 處理
 // topic: 由producer創建時設置
 // key: userID 一個userID只會有一個購物車
+// 若後續需要由cart command handler 發送order created event，則還會需要order producer
 type cartCommandHandler struct {
 	userService    *service.UserService
 	productService *service.ProductService
+	cartRepo       *redis_repo.CartRepo
+	userOrderRepo  *db.UserOrderRepo
+	orderEventDB   *eventdb.EventDao
 	kafkaProducer  producer.Producer
 }
 
-func newCartCommandHandler(userService *service.UserService, productService *service.ProductService, kafkaProducer producer.Producer) *cartCommandHandler {
-	return &cartCommandHandler{userService: userService, productService: productService, kafkaProducer: kafkaProducer}
+func newCartCommandHandler(
+	userService *service.UserService,
+	productService *service.ProductService,
+	cartRepo *redis_repo.CartRepo,
+	userOrderRepo *db.UserOrderRepo,
+	orderEventDB *eventdb.EventDao,
+	kafkaProducer producer.Producer,
+) *cartCommandHandler {
+	if cartRepo == nil {
+		panic("cartCommandHandler dependency cartRepo is nil")
+	}
+	if userOrderRepo == nil {
+		panic("cartCommandHandler dependency userOrderRepo is nil")
+	}
+	if orderEventDB == nil {
+		panic("cartCommandHandler dependency orderEventDB is nil")
+	}
+	if kafkaProducer == nil {
+		panic("cartCommandHandler dependency kafkaProducer is nil")
+	}
+	if userService == nil {
+		panic("cartCommandHandler dependency userService is nil")
+	}
+	if productService == nil {
+		panic("cartCommandHandler dependency productService is nil")
+	}
+
+	return &cartCommandHandler{
+		userService:    userService,
+		productService: productService,
+		cartRepo:       cartRepo,
+		userOrderRepo:  userOrderRepo,
+		orderEventDB:   orderEventDB,
+		kafkaProducer:  kafkaProducer,
+	}
 }
 
 // 通用的事件消息準備函數
@@ -133,26 +175,11 @@ func (h *cartCommandHandler) produceCartFailedEvent(ctx context.Context, userID 
 }
 
 func prepareCartEventMessage(userID int, orderItems []model.OrderItemData) (message.Message, error) {
-	return prepareEventMessage(userID, evt_model.CartCreatedEventName, evt_model.CartCreatedEvent{
-		BaseEvent: evt_model.BaseEvent{
-			EventID:     uuid.New().String(),
-			AggregateID: generateCartAggregateID(userID),
-			EventType:   evt_model.CartCreatedEventName,
-		},
-		UserID: userID,
-		Items:  orderItems,
-	})
+	return prepareEventMessage(userID, evt_model.CartCreatedEventName, evt_model.NewCartCreatedEvent(strconv.Itoa(userID), userID, orderItems))
 }
 
 func prepareCartFailedEventMessage(userID int, errs ...error) (message.Message, error) {
-	return prepareEventMessage(userID, evt_model.CartFailedEventName, evt_model.CartFailedEvent{
-		BaseEvent: evt_model.BaseEvent{
-			EventID:     uuid.New().String(),
-			AggregateID: generateCartAggregateID(userID),
-			EventType:   evt_model.CartFailedEventName,
-		},
-		Message: errors.Join(errs...).Error(),
-	})
+	return prepareEventMessage(userID, evt_model.CartFailedEventName, evt_model.NewCartFailedEvent(strconv.Itoa(userID), userID, errors.Join(errs...).Error()))
 }
 
 // 驗證命令
@@ -208,19 +235,10 @@ func (h *cartCommandHandler) produceCartUpdatedEvent(ctx context.Context, userID
 }
 
 func prepareCartUpdatedEventMessage(userID int, details []cmd_model.CartUpdatedDetial) (message.Message, error) {
-	return prepareEventMessage(userID, evt_model.CartUpdatedEventName, evt_model.CartUpdatedEvent{
-		BaseEvent: evt_model.BaseEvent{
-			EventID:     uuid.New().String(),
-			AggregateID: generateCartAggregateID(userID),
-			EventType:   evt_model.CartUpdatedEventName,
-		},
-		UserID:  userID,
-		Details: details,
-	})
+	return prepareEventMessage(userID, evt_model.CartUpdatedEventName, evt_model.NewCartUpdatedEvent(strconv.Itoa(userID), userID, details))
 }
 
-// 購物車確認-> 進入訂單狀態後 會刪除購物車
-// 或者購物車直接刪除
+// 購物車直接刪除內容
 func (h *cartCommandHandler) HandleCartDeleted(ctx context.Context, cmd cmd_model.Command) error {
 	var c *cmd_model.CartDeletedCommand
 	var ok bool
@@ -252,16 +270,73 @@ func (h *cartCommandHandler) produceCartDeletedEvent(ctx context.Context, userID
 }
 
 func prepareCartDeletedEventMessage(userID int) (message.Message, error) {
-	return prepareEventMessage(userID, evt_model.CartDeletedEventName, evt_model.CartDeletedEvent{
-		BaseEvent: evt_model.BaseEvent{
-			EventID:     uuid.New().String(),
-			AggregateID: generateCartAggregateID(userID),
-			EventType:   evt_model.CartDeletedEventName,
-		},
-		UserID: userID,
-	})
+	return prepareEventMessage(userID, evt_model.CartDeletedEventName, evt_model.NewCartDeletedEvent(strconv.Itoa(userID), userID))
 }
 
+// 付款完成後發送orderCreatedEvent
+// 購物車確認-> 進入訂單狀態後 會刪除購物車
+// order 領域使用event sourcing 處理，所以這裡order命令確認完後，就要儲存到eventdb
+// 發送orderCreatedEvent
+func (h *cartCommandHandler) HandleCartConfirmed(ctx context.Context, cmd cmd_model.Command) error {
+	var c *cmd_model.CartConfirmedCommand
+	var ok bool
+	if c, ok = cmd.(*cmd_model.CartConfirmedCommand); !ok {
+		return errCartCommand
+	}
+
+	user, err := h.userService.GetUser(ctx, c.UserID)
+	if err != nil {
+		return err
+	}
+
+	cartCache, err := h.cartRepo.Get(ctx, user.UserID)
+	if err != nil {
+		return err
+	}
+
+	orderID := util.GenerateOrderIDByUUID()
+	orderItems := util.CacheOrderToOrderItemData(cartCache)
+	amount := util.CalculateOrderAmount(orderItems)
+
+	orderCreatedEvent := evt_model.NewOrderCreatedEvent(orderID, user.UserID, orderID, time.Now().UTC(), orderItems, amount, uint(evt_model.OrderStateCreated))
+
+	//儲存user orderid關連到pg
+	userOrder, err := h.userOrderRepo.CreateUserOrder(&model.UserOrder{
+		UserID:  user.UserID,
+		OrderID: orderID,
+	})
+	if err != nil {
+		return err
+	}
+
+	// 唯一真相來源
+	err = h.orderEventDB.SaveOrderCreatedEvent(ctx, orderCreatedEvent)
+	if err != nil {
+		//補償機制  當事件儲存失敗時，視同任務失敗
+		h.userOrderRepo.DeleteUserOrder(userOrder.ID)
+		return fmt.Errorf("%w: %v", errUserOrderCreateFailed, err)
+	}
+
+	//次要事件發布，有錯誤會記錄，交由後續程序處理
+	// go h.produceCartDeletedEvent(ctx, user.UserID)
+	// 目前order created event沒有實質處理內容
+	// go h.produceOrderCreatedEvent(ctx, user.UserID, orderCreatedEvent)
+
+	return nil
+}
+
+func (h *cartCommandHandler) produceOrderCreatedEvent(ctx context.Context, userID int, evt *evt_model.OrderCreatedEvent) {
+	msg, err := prepareCartConfirmedEventMessage(userID, evt)
+	if err != nil {
+		return
+	}
+
+	h.kafkaProducer.Produce(ctx, []message.Message{msg})
+}
+
+func prepareCartConfirmedEventMessage(userID int, evt *evt_model.OrderCreatedEvent) (message.Message, error) {
+	return prepareEventMessage(userID, evt_model.OrderCreatedEventName, evt)
+}
 func generateCartAggregateID(userID int) string {
 	return fmt.Sprintf("cart:%d", userID)
 }

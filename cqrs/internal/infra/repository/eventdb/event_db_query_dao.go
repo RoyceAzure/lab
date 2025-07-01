@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/EventStore/EventStore-Client-Go/v4/esdb"
@@ -94,6 +95,9 @@ func (e *EventDBQueryDao) CreateOrderProjection(ctx context.Context, projectionN
 	`
 	err := e.ProjectionClient.Create(ctx, projectionName, projectionJS, esdb.CreateProjectionOptions{})
 	if err != nil {
+		if isProjectionConflictError(err) {
+			return nil
+		}
 		return fmt.Errorf("failed to create projection: %w", err)
 	}
 
@@ -102,8 +106,18 @@ func (e *EventDBQueryDao) CreateOrderProjection(ctx context.Context, projectionN
 
 // 使用projectionName和streamId分區查詢
 // projections-{projectName}-{streamId}-result
-func (e *EventDBQueryDao) GetOrderState(ctx context.Context, projectionName string, streamID string) (*evt_model.OrderAggregate, error) {
+// param:
+//
+//	projectionName: 投影名稱
+//	orderId: 訂單id
+//
+// return:
+//
+//	訂單狀態
+//	error: 錯誤
+func (e *EventDBQueryDao) GetOrderState(ctx context.Context, projectionName string, orderId string) (*evt_model.OrderAggregate, error) {
 	// 構建結果流名稱
+	streamID := GenerateOrderStreamID(orderId)
 	resultStreamID := fmt.Sprintf("$projections-%s-%s-result", projectionName, streamID)
 
 	// 讀取結果流
@@ -227,4 +241,13 @@ func (e *EventDBQueryDao) DeleteOrderProjection(ctx context.Context, projectionN
 	}
 
 	return nil
+}
+
+func isProjectionConflictError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := err.Error()
+	return strings.Contains(errStr, "Conflict")
 }

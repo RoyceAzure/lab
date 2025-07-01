@@ -16,7 +16,6 @@ import (
 	"github.com/RoyceAzure/lab/authcenter/internal/service"
 	"github.com/RoyceAzure/lab/authcenter/internal/util"
 	"github.com/RoyceAzure/lab/rj_redis/pkg/cache"
-	rj_redis "github.com/RoyceAzure/lab/rj_redis/pkg/cache/redis"
 	"github.com/RoyceAzure/lab/rj_redis/pkg/redis_client"
 	"github.com/RoyceAzure/rj/api/token"
 	util_http "github.com/RoyceAzure/rj/util/rj_http"
@@ -246,7 +245,7 @@ func (app *ApplicationContext) setTokenMaker() error {
 
 func (app *ApplicationContext) setUpBlackListRedisCache() error {
 	log.Printf("Start setup black list redis cache")
-	app.BlackListRedisCache = rj_redis.NewRedisCache(app.RedisClient, "black_list")
+	app.BlackListRedisCache = cache.NewRedisCache(app.RedisClient, "black_list")
 	log.Printf("Finish setup black list redis cache")
 	return nil
 }
