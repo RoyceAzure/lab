@@ -10,6 +10,7 @@ import (
 	"github.com/EventStore/EventStore-Client-Go/v4/esdb"
 	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
 	evt_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/event"
+	"github.com/rs/zerolog/log"
 	"github.com/shopspring/decimal"
 )
 
@@ -17,22 +18,161 @@ type CategoryName string
 type ProjectionName string
 
 const (
-	OrderCategoryName   CategoryName   = "order"
-	OrderProjectionName ProjectionName = "order-projection"
+	OrderCategoryName        CategoryName   = "order"
+	OrderProjectionName      ProjectionName = "order-projection"
+	OrderBatchProjectionName ProjectionName = "order-batch-projection"
 )
 
 // EventDBQueryDao 用於查詢 EventStore 的 DAO
+// 負責處理projection功能
 type EventDBQueryDao struct {
-	ProjectionClient *esdb.ProjectionClient
-	Client           *esdb.Client
+	projectionClient *esdb.ProjectionClient
+	client           *esdb.Client
 }
 
 // NewEventDBQueryDao 創建新的 EventDBQueryDao
 func NewEventDBQueryDao(projectionClient *esdb.ProjectionClient, client *esdb.Client) *EventDBQueryDao {
 	return &EventDBQueryDao{
-		ProjectionClient: projectionClient,
-		Client:           client,
+		projectionClient: projectionClient,
+		client:           client,
 	}
+}
+
+// block 訂閱
+// description:
+//
+//	固定監聽order-updates stream資料
+//
+// param:
+//
+//	ctx: context
+//	handler func(event evt_model.OrderAggregate): 處理事件的函數，只有fatel錯誤才回傳，然後中斷SubscribeOrderStream
+//
+// return:
+//
+//	error: 只有發生fatel error 才回傳，並且中斷SubscribeOrderStream process
+func (e *EventDBQueryDao) SubscribeOrderStream(ctx context.Context, handler func(event evt_model.OrderAggregate) error) error {
+	subscription, err := e.client.SubscribeToStream(ctx, "order-updates", esdb.SubscribeToStreamOptions{})
+	if err != nil {
+		return err
+	}
+	defer subscription.Close()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			event := subscription.Recv()
+			if event.SubscriptionDropped != nil {
+				return fmt.Errorf("subscription dropped: %w", event.SubscriptionDropped.Error)
+			}
+			//TODO: 錯誤需要紀錄
+			if event.EventAppeared != nil {
+				var orderEvent evt_model.OrderAggregate
+				if err := json.Unmarshal(event.EventAppeared.Event.Data, &orderEvent); err != nil {
+					log.Error().Err(err).Msg("failed to unmarshal event")
+				}
+				if err := handler(orderEvent); err != nil {
+					log.Error().Err(err).Msg("handler error")
+				}
+			}
+		}
+	}
+}
+
+// projection
+// description:
+//
+//	CreateProjection 創建oreder 分區projection
+//	partition: 分區使用streamId的訂單id取模
+//	result: 結果不會寫到result stream，而是emit到order-updates stream
+//	app層需要訂閱order-updates stream，然後處理批次更新到query db
+//
+// param:
+//
+//	projectionName: 自定投影名稱
+//
+// return:
+//
+//	error: 錯誤
+func (e *EventDBQueryDao) CreateOrderBatchProjection(ctx context.Context, projectionName string) error {
+	projectionJS := `
+fromCategory('order')
+    .partitionBy(function(event) {
+        // 自定義分區：按訂單id取模
+        return event.streamId.split('-')[1] % 100;
+    })
+    .when({
+        $init: function() {
+            return {
+                orders: {} // 儲存多個訂單狀態
+            };
+        },
+        'OrderCreated': function(s, e) {
+            var orderId = e.streamId.split('-')[1];
+            var data = e.data;
+            // 更新訂單狀態
+            s.orders[orderId] = {
+                order_id: data.order_id,
+                user_id: data.user_id,
+                order_date: data.order_date,
+                items: data.items,
+                amount: data.amount,
+                state: data.to_state,
+                created_at: data.order_date,
+                tracking_code: null,
+                carrier: null,
+                message: null
+            };
+            // 即時 emit
+            emit('order-updates', 'OrderStateUpdated', s.orders[orderId]);
+        },
+        'OrderConfirmed': function(s, e) {
+            var orderId = e.streamId.split('-')[1];
+            var data = e.data;
+            s.orders[orderId] = s.orders[orderId] || {};
+            s.orders[orderId].state = data.to_state;
+            emit('order-updates', 'OrderStateUpdated', s.orders[orderId]);
+        },
+        'OrderShipped': function(s, e) {
+            var orderId = e.streamId.split('-')[1];
+            var data = e.data;
+            s.orders[orderId] = s.orders[orderId] || {};
+            s.orders[orderId].state = data.to_state;
+            s.orders[orderId].tracking_code = data.tracking_code;
+            s.orders[orderId].carrier = data.carrier;
+            emit('order-updates', 'OrderStateUpdated', s.orders[orderId]);
+        },
+        'OrderCancelled': function(s, e) {
+            var orderId = e.streamId.split('-')[1];
+            var data = e.data;
+            s.orders[orderId] = s.orders[orderId] || {};
+            s.orders[orderId].state = data.to_state;
+            s.orders[orderId].message = data.message;
+            emit('order-updates', 'OrderStateUpdated', s.orders[orderId]);
+        },
+        'OrderRefunded': function(s, e) {
+            var orderId = e.streamId.split('-')[1];
+            var data = e.data;
+            s.orders[orderId] = s.orders[orderId] || {};
+            s.orders[orderId].state = data.to_state;
+            s.orders[orderId].amount = data.amount;
+            emit('order-updates', 'OrderStateUpdated', s.orders[orderId]);
+        }
+    });
+		`
+	err := e.projectionClient.Create(ctx, projectionName, projectionJS, esdb.CreateProjectionOptions{
+		Emit: true,
+	})
+	if err != nil {
+		if isProjectionConflictError(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to create projection: %w", err)
+	}
+
+	return nil
 }
 
 // projection
@@ -93,7 +233,7 @@ func (e *EventDBQueryDao) CreateOrderProjection(ctx context.Context, projectionN
 	})
 	.outputState();
 	`
-	err := e.ProjectionClient.Create(ctx, projectionName, projectionJS, esdb.CreateProjectionOptions{})
+	err := e.projectionClient.Create(ctx, projectionName, projectionJS, esdb.CreateProjectionOptions{})
 	if err != nil {
 		if isProjectionConflictError(err) {
 			return nil
@@ -121,7 +261,7 @@ func (e *EventDBQueryDao) GetOrderState(ctx context.Context, projectionName stri
 	resultStreamID := fmt.Sprintf("$projections-%s-%s-result", projectionName, streamID)
 
 	// 讀取結果流
-	stream, err := e.Client.ReadStream(ctx, resultStreamID, esdb.ReadStreamOptions{
+	stream, err := e.client.ReadStream(ctx, resultStreamID, esdb.ReadStreamOptions{
 		Direction: esdb.Backwards,
 		From:      esdb.End{},
 	}, 1)
@@ -235,7 +375,7 @@ func (e *EventDBQueryDao) GetOrderState(ctx context.Context, projectionName stri
 
 // DeleteOrderProjection 刪除訂單的 projection
 func (e *EventDBQueryDao) DeleteOrderProjection(ctx context.Context, projectionName string) error {
-	err := e.ProjectionClient.Delete(ctx, projectionName, esdb.DeleteProjectionOptions{})
+	err := e.projectionClient.Delete(ctx, projectionName, esdb.DeleteProjectionOptions{})
 	if err != nil {
 		return fmt.Errorf("刪除 projection 失敗: %w", err)
 	}

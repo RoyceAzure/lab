@@ -1,7 +1,11 @@
 package db
 
 import (
+	"fmt"
+
 	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // 購物車階段 只會寫入到redis, 不會寫入到db，所有購物車資料都要去redis取
@@ -177,4 +181,149 @@ func (s *OrderRepo) UpdateOrderItemQuantity(orderID, productID uint, quantity in
 func (s *OrderRepo) DeleteOrderItem(orderID, productID uint) error {
 	return s.db.Where("order_id = ? AND product_id = ?", orderID, productID).
 		Delete(&model.OrderItem{}).Error
+}
+
+// BatchUpdateResult 批次更新結果
+type BatchUpdateResult struct {
+	SuccessOrders []string         // 成功更新的訂單ID
+	FailedOrders  map[string]error // 失敗的訂單ID及其錯誤原因
+	TotalCount    int              // 總處理數量
+	SuccessCount  int              // 成功數量
+	FailCount     int              // 失敗數量
+}
+
+// 批量更新訂單
+func (s *OrderRepo) UpdateOrdersBatch(orders []*model.Order) (*BatchUpdateResult, error) {
+	if len(orders) == 0 {
+		return &BatchUpdateResult{
+			SuccessOrders: make([]string, 0),
+			FailedOrders:  make(map[string]error),
+			TotalCount:    0,
+			SuccessCount:  0,
+			FailCount:     0,
+		}, nil
+	}
+
+	result := &BatchUpdateResult{
+		SuccessOrders: make([]string, 0, len(orders)),
+		FailedOrders:  make(map[string]error),
+		TotalCount:    len(orders),
+		SuccessCount:  0,
+		FailCount:     0,
+	}
+
+	// 使用事務來確保資料一致性
+	err := s.db.DB.Transaction(func(tx *gorm.DB) error {
+		// 準備批次更新的訂單 ID 列表
+		orderIDs := make([]string, len(orders))
+		for i, order := range orders {
+			orderIDs[i] = order.OrderID
+		}
+
+		// 使用 Upsert 批次更新訂單基本資訊
+		for _, order := range orders {
+			if err := tx.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "order_id"}},
+				DoUpdates: clause.AssignmentColumns([]string{"user_id", "amount", "order_date", "state"}),
+			}).Create(order).Error; err != nil {
+				// 記錄失敗的訂單
+				result.FailedOrders[order.OrderID] = err
+				result.FailCount++
+				// 記錄錯誤但繼續處理其他訂單
+				continue
+			}
+			// 記錄成功的訂單
+			result.SuccessOrders = append(result.SuccessOrders, order.OrderID)
+			result.SuccessCount++
+		}
+
+		// 處理訂單項目
+		successOrderMap := make(map[string]struct{})
+		for _, orderID := range result.SuccessOrders {
+			successOrderMap[orderID] = struct{}{}
+		}
+
+		// 收集所有需要檢查的訂單項目
+		var itemsToCheck []model.OrderItem
+		for _, order := range orders {
+			if _, ok := successOrderMap[order.OrderID]; ok && len(order.OrderItems) > 0 {
+				itemsToCheck = append(itemsToCheck, order.OrderItems...)
+			}
+		}
+
+		if len(itemsToCheck) > 0 {
+			// 批次檢查訂單項目是否存在
+			var existingItems []struct {
+				OrderID   string
+				ProductID string
+			}
+			if err := tx.Model(&model.OrderItem{}).
+				Select("order_id, product_id").
+				Where("(order_id, product_id) IN ?", generateOrderItemPKPairs(itemsToCheck)).
+				Find(&existingItems).Error; err != nil {
+				return err
+			}
+
+			// 建立已存在項目的映射
+			existingMap := make(map[string]struct{})
+			for _, item := range existingItems {
+				key := fmt.Sprintf("%s-%s", item.OrderID, item.ProductID)
+				existingMap[key] = struct{}{}
+			}
+
+			// 使用 Upsert 處理訂單項目
+			for _, item := range itemsToCheck {
+				if err := tx.Clauses(clause.OnConflict{
+					Columns:   []clause.Column{{Name: "order_id"}, {Name: "product_id"}},
+					DoUpdates: clause.AssignmentColumns([]string{"quantity"}),
+				}).Create(&item).Error; err != nil {
+					// 如果訂單項目插入失敗，將相關訂單標記為失敗
+					if _, exists := result.FailedOrders[item.OrderID]; !exists {
+						result.FailedOrders[item.OrderID] = fmt.Errorf("failed to create order items: %v", err)
+						result.FailCount++
+						result.SuccessCount--
+						// 從成功列表中移除
+						for j, successID := range result.SuccessOrders {
+							if successID == item.OrderID {
+								result.SuccessOrders = append(result.SuccessOrders[:j], result.SuccessOrders[j+1:]...)
+								break
+							}
+						}
+					}
+					// 繼續處理下一個項目
+					continue
+				}
+			}
+		}
+
+		// 如果所有訂單都失敗，返回錯誤
+		if result.FailCount == result.TotalCount {
+			return fmt.Errorf("all orders failed to update")
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		// 如果事務失敗，將所有未記錄的訂單標記為失敗
+		for _, order := range orders {
+			if _, exists := result.FailedOrders[order.OrderID]; !exists {
+				result.FailedOrders[order.OrderID] = err
+				result.FailCount++
+			}
+		}
+		result.SuccessOrders = nil
+		result.SuccessCount = 0
+	}
+
+	return result, err
+}
+
+// generateOrderItemPKPairs 生成訂單項目主鍵對的列表
+func generateOrderItemPKPairs(items []model.OrderItem) [][]interface{} {
+	pairs := make([][]interface{}, len(items))
+	for i, item := range items {
+		pairs[i] = []interface{}{item.OrderID, item.ProductID}
+	}
+	return pairs
 }

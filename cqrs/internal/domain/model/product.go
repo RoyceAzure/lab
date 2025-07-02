@@ -13,6 +13,6 @@ type Product struct {
 	Reserved    uint            `gorm:"not null;type:int"`
 	Category    string          `gorm:"not null;type:varchar(50)"`
 	Description string          `gorm:"not null;type:text"`
-	OrderItems  []OrderItem     `gorm:"foreignKey:ProductID;constraint:OnDelete:CASCADE"` // 一對多，級聯刪除
-	BaseModel                   // CreatedAt, UpdatedAt, DeletedAt
+	// OrderItems  []OrderItem     `gorm:"foreignKey:ProductID;constraint:OnDelete:CASCADE"` // 一對多，級聯刪除，方便測試 先mark
+	BaseModel // CreatedAt, UpdatedAt, DeletedAt
 }

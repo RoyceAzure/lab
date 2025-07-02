@@ -20,16 +20,16 @@ const (
 // 訂單階段  OrderItems不會變動
 // 訂單階段  只有state 會變動
 type OrderAggregate struct {
-	OrderID      string
-	UserID       int
-	OrderItems   []model.OrderItemData
-	Amount       decimal.Decimal
-	OrderDate    time.Time
-	State        uint
-	CreatedAt    time.Time
-	TrackingCode string
-	Carrier      string
-	Message      string // 取消原因
+	OrderID      string                `json:"order_id"`
+	UserID       int                   `json:"user_id"`
+	OrderItems   []model.OrderItemData `json:"items"`
+	Amount       decimal.Decimal       `json:"amount"`
+	OrderDate    time.Time             `json:"order_date"`
+	State        uint                  `json:"state"`
+	CreatedAt    time.Time             `json:"created_at"`
+	TrackingCode string                `json:"tracking_code"`
+	Carrier      string                `json:"carrier"`
+	Message      string                `json:"message"` // 取消原因
 	// 不需要 Version，EventStore 管理
 }
 
