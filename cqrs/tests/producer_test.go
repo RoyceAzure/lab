@@ -18,6 +18,7 @@ import (
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/producer/balancer"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/eventdb"
+	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/redis_decorator"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/redis_repo"
 	"github.com/RoyceAzure/lab/cqrs/internal/service"
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/admin"
@@ -38,6 +39,7 @@ var (
 	CartCmdConsumerGroup    = fmt.Sprintf("%s-cart-cmd", ConsumerGroupPrefix)
 	CartEventConsumerGroup  = fmt.Sprintf("%s-cart-evt", ConsumerGroupPrefix)
 	OrderEventConsumerGroup = fmt.Sprintf("%s-order-evt", ConsumerGroupPrefix)
+	ProductCmdConsumerGroup = fmt.Sprintf("%s-product-cmd", ConsumerGroupPrefix)
 
 	TopicPrefix         = fmt.Sprintf("test-cqrs-topic")
 	CartCmdTopicName    = fmt.Sprintf("%s-cart-cmd-%d", TopicPrefix, time.Now().UnixNano())
@@ -46,6 +48,8 @@ var (
 
 	//projection 固定用一個處理order category就可以
 	OrderProjectionName = "test-order-projection"
+
+	ProductCmdTopicName = fmt.Sprintf("%s-product-cmd-%d", TopicPrefix, time.Now().UnixNano())
 
 	ProductNum = 10
 	UserNum    = 100
@@ -110,6 +114,20 @@ func setupTestEnvironment(t *testing.T) func() {
 	})
 	assert.NoError(t, err)
 
+	// 創建 product command topic，設定較短的retention時間以便自動清理
+	err = adminClient.CreateTopic(context.Background(), admin.TopicConfig{
+		Name:              ProductCmdTopicName,
+		Partitions:        kafkaConfigTemplate.Partition,
+		ReplicationFactor: 3,
+		Configs: map[string]interface{}{
+			"cleanup.policy":      "delete",
+			"retention.ms":        "60000", // 1分鐘後自動刪除
+			"min.insync.replicas": "2",
+			"delete.retention.ms": "1000", // 標記刪除後1秒鐘清理
+		},
+	})
+	assert.NoError(t, err)
+
 	// 等待 topic 創建完成
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -143,9 +161,11 @@ func setupTestEnvironment(t *testing.T) func() {
 type ProducerTestSuite struct {
 	suite.Suite
 	dbDao                 *db.DbDao
+	unifiedDB             *db.UnifiedDBImpl
 	userRepo              *db.UserRepo
 	userOrderRepo         *db.UserOrderRepo
-	productRepo           *redis_repo.ProductRepo
+	productRedisRepo      *redis_repo.ProductRedisRepo
+	productWriteBackRepo  *redis_decorator.WiteBackProductRepo
 	orderEventDB          *eventdb.EventDao
 	userService           *service.UserService
 	productService        *service.ProductService
@@ -157,8 +177,10 @@ type ProducerTestSuite struct {
 	cartCommandProducer   *producer.CartCommandProducer //for測試使用者發送命令
 	cartCommandConsumers  []consumer.IBaseConsumer
 	cartEventConsumers    []consumer.IBaseConsumer
-	toCartCommandProducer kafka_producer.Producer //for測試使用者發送命令
-	toCartEventProducer   kafka_producer.Producer //for cart command handler
+	productConsumer       []*consumer.ProductConsumer //for WiteBackProductRepo 更新db product 資料
+	productRepoProducer   *producer.ProductProducer   //for WiteBackProductRepo 發送product 修改指令
+	toCartCommandProducer kafka_producer.Producer     //for測試使用者發送命令
+	toCartEventProducer   kafka_producer.Producer     //for cart command handler
 	orderEventDBQueryDao  *eventdb.EventDBQueryDao
 
 	redisClient *redis.Client
@@ -173,7 +195,10 @@ func TestProducerTestSuite(t *testing.T) {
 }
 
 func generateRandomProductID() string {
-	return fmt.Sprintf("P%d", rand.Intn(1000000))
+	// 使用納秒級時間戳加上隨機數，確保唯一性
+	timestamp := time.Now().UnixNano() % 1000000           // 只取後6位
+	randomPart := rand.Intn(100)                           // 減少為2位隨機數
+	return fmt.Sprintf("P%10d%02d", timestamp, randomPart) // 使用固定長度格式
 }
 
 func (suite *ProducerTestSuite) SetupSuite() {
@@ -204,12 +229,17 @@ func (suite *ProducerTestSuite) SetupSuite() {
 	// 初始化 repositories
 	suite.setupOrderEventDBQueryDao()
 
+	suite.unifiedDB = db.NewUnifiedDB(conn)
+
 	suite.userRepo = db.NewUserRepo(suite.dbDao)
-	suite.productRepo = redis_repo.NewProductRepo(suite.redisClient)
+	suite.productRedisRepo = redis_repo.NewProductRepo(suite.redisClient)
+	suite.setupProductConsumer()
+	suite.setupProductRepoProducer()
+	suite.productWriteBackRepo = redis_decorator.NewWiteBackProductRepo(suite.productRepoProducer, suite.productRedisRepo, suite.unifiedDB)
 	suite.userOrderRepo = db.NewUserOrderRepo(suite.dbDao)
 	suite.cartRepo = redis_repo.NewCartRepo(suite.redisClient)
 	suite.userService = service.NewUserService(suite.userRepo)
-	suite.productService = service.NewProductService(suite.productRepo)
+	suite.productService = service.NewProductService(suite.productWriteBackRepo)
 	suite.setupToCartCommandProducer()
 	suite.setupCartCommandProducer()
 	suite.setupCartEventConsumer()
@@ -236,12 +266,12 @@ func (suite *ProducerTestSuite) SetupTest() {
 			UserAddress: "test address",
 		}
 		// 建立測試使用者並獲取創建後的用戶（包含自動生成的ID）
-		createdUser, err := suite.userRepo.CreateUser(user)
+		createdUser, err := suite.userRepo.CreateUser(ctx, user)
 		require.NoError(suite.T(), err)
 		suite.testUsers[i] = createdUser
 
 		// 確保使用者已經被創建
-		_, err = suite.userRepo.GetUserByID(createdUser.UserID)
+		_, err = suite.userRepo.GetUserByID(ctx, createdUser.UserID)
 		require.NoError(suite.T(), err)
 	}
 
@@ -250,30 +280,23 @@ func (suite *ProducerTestSuite) SetupTest() {
 	for i := 0; i < ProductNum; i++ {
 		productID := generateRandomProductID()
 		price := decimal.NewFromFloat(float64((i + 1) * 100))
+		initialStock := uint(rand.Intn(100) + 100)
 		suite.testProducts[i] = &model.Product{
 			ProductID: productID,
+			Code:      fmt.Sprintf("P%s", productID),
 			Name:      fmt.Sprintf("Test Product %d", i+1),
 			Price:     price,
+			Reserved:  initialStock,
+			Stock:     initialStock,
 		}
 
-		initialStock := uint(rand.Intn(100) + 30)
 		// 記錄初始庫存
 		suite.initialStocks[productID] = initialStock
 
 		// 建立商品
-		err := suite.productRepo.CreateProductStock(ctx, productID, initialStock)
+		err := suite.productService.CreateProduct(ctx, suite.testProducts[i])
 		require.NoError(suite.T(), err)
 
-		// 設置商品庫存
-		err = suite.productRepo.CreateProductStock(ctx, productID, initialStock)
-		require.NoError(suite.T(), err)
-
-		// 確保商品和庫存都已經被創建
-		_, err = suite.productRepo.GetProductStock(ctx, productID)
-		require.NoError(suite.T(), err)
-		stock, err := suite.productRepo.GetProductStock(ctx, productID)
-		require.NoError(suite.T(), err)
-		require.Equal(suite.T(), initialStock, stock)
 	}
 
 	// 在設置完成後，給予一些時間讓系統穩定
@@ -283,31 +306,18 @@ func (suite *ProducerTestSuite) SetupTest() {
 
 func (suite *ProducerTestSuite) TearDownTest() {
 	suite.T().Log("=== TearDownTest: 開始清理單個測試 ===")
-	ctx := context.Background()
 
-	// 清理測試使用者資料
-	for _, user := range suite.testUsers {
-		err := suite.userRepo.HardDeleteUser(user.UserID)
-		require.NoError(suite.T(), err)
-	}
+	// // 由於外鍵約束，需要按照正確的順序清理數據
+	// // 先清理有外鍵引用的表
+	// suite.dbDao.Exec("DELETE FROM user_orders")
+	// suite.dbDao.Exec("DELETE FROM order_items")
+	// suite.dbDao.Exec("DELETE FROM orders")
+	// // 再清理被引用的表
+	// suite.dbDao.Exec("DELETE FROM users")
+	// // suite.dbDao.Exec("DELETE FROM products")
 
-	// 清理測試商品資料
-	for _, product := range suite.testProducts {
-		// 清理商品庫存（Redis）
-		err := suite.productRepo.AddProductStock(ctx, product.ProductID, 0)
-		require.NoError(suite.T(), err)
-		// 清理商品資料（DB）
-		err = suite.productRepo.DeleteProductStock(ctx, product.ProductID)
-		require.NoError(suite.T(), err)
-	}
-
-	// 清理user order
-	for _, user := range suite.testUsers {
-		suite.userOrderRepo.HardDeleteUserOrder(user.UserID)
-	}
-
-	// 等待一段時間確保所有連接都已正確關閉
-	time.Sleep(2 * time.Second)
+	// // 等待一段時間確保所有連接都已正確關閉
+	// time.Sleep(2 * time.Second)
 
 	suite.T().Log("=== TearDownTest: 測試清理完成 ===")
 }
@@ -330,7 +340,13 @@ func (suite *ProducerTestSuite) TearDownSuite() {
 			consumer.Stop()
 		}(cus)
 	}
-
+	for _, cus := range suite.productConsumer {
+		wg.Add(1)
+		go func(consumer *consumer.ProductConsumer) {
+			defer wg.Done()
+			consumer.Stop()
+		}(cus)
+	}
 	wg.Wait()
 
 	// 關閉生產者
@@ -343,6 +359,14 @@ func (suite *ProducerTestSuite) TearDownSuite() {
 		suite.toCartEventProducer = nil
 	}
 	suite.T().Log("=== TearDownSuite: 測試套件清理完成 ===")
+}
+
+func (suite *ProducerTestSuite) setupProductRepoProducer() {
+	configTemplate := kafkaConfigTemplate
+	configTemplate.Topic = ProductCmdTopicName
+	p, err := kafka_producer.New(&configTemplate)
+	require.NoError(suite.T(), err)
+	suite.productRepoProducer = producer.NewProductProducer(p)
 }
 
 // for user
@@ -438,6 +462,20 @@ func (suite *ProducerTestSuite) setupCartCommandConsumer() {
 
 func (suite *ProducerTestSuite) setupCartEventHandler() {
 	suite.cartEventHandler = event_handler.NewCartEventHandler(suite.cartRepo)
+}
+
+func (suite *ProducerTestSuite) setupProductConsumer() {
+	configTemplate := kafkaConfigTemplate
+	configTemplate.ConsumerGroup = ProductCmdConsumerGroup
+	configTemplate.Topic = ProductCmdTopicName
+	partitions := configTemplate.Partition
+	for i := 0; i < partitions; i++ {
+		cos, err := kafka_consumer.New(&configTemplate)
+		require.NoError(suite.T(), err)
+		productConsumer := consumer.NewProductConsumer(suite.unifiedDB, cos)
+		productConsumer.Start(context.Background())
+		suite.productConsumer = append(suite.productConsumer, productConsumer)
+	}
 }
 
 // 設置cart event handler
@@ -602,9 +640,9 @@ func (suite *ProducerTestSuite) TestConcurrentCartOperations() {
 	// 1. 獲取所有商品的當前庫存
 	currentStocks := make(map[string]uint)
 	for _, product := range suite.testProducts {
-		stock, err := suite.productRepo.GetProductStock(ctx, product.ProductID)
+		stock, err := suite.productRedisRepo.GetProductStock(ctx, product.ProductID)
 		require.NoError(suite.T(), err)
-		currentStocks[product.ProductID] = stock
+		currentStocks[product.ProductID] = uint(stock)
 	}
 
 	// 2. 獲取所有使用者的購物車內容，並驗證訂單
@@ -668,4 +706,35 @@ func (suite *ProducerTestSuite) TestConcurrentCartOperations() {
 		require.Equal(suite.T(), initialStock-currentStock, inCarts,
 			"Product %s: stock difference should equal tota/l in carts", productID)
 	}
+}
+
+// TestManualCleanup 獨立的測試函數，不依賴 suite 的設置
+func TestManualCleanup(t *testing.T) {
+	// 直接創建數據庫連接
+	conn, err := db.GetDbConn("lab_cqrs", "localhost", "5432", "royce", "password")
+	if err != nil {
+		t.Fatalf("Failed to create db connection: %v", err)
+	}
+	dbDao := db.NewDbDao(conn)
+
+	// 由於外鍵約束，需要按照正確的順序清理數據
+	// 先清理有外鍵引用的表
+	if err := dbDao.Exec("DELETE FROM user_orders").Error; err != nil {
+		t.Logf("清理 user_orders 時發生錯誤: %v", err)
+	}
+	if err := dbDao.Exec("DELETE FROM order_items").Error; err != nil {
+		t.Logf("清理 order_items 時發生錯誤: %v", err)
+	}
+	if err := dbDao.Exec("DELETE FROM orders").Error; err != nil {
+		t.Logf("清理 orders 時發生錯誤: %v", err)
+	}
+	// 再清理被引用的表
+	if err := dbDao.Exec("DELETE FROM users").Error; err != nil {
+		t.Logf("清理 users 時發生錯誤: %v", err)
+	}
+	if err := dbDao.Exec("DELETE FROM products").Error; err != nil {
+		t.Logf("清理 products 時發生錯誤: %v", err)
+	}
+
+	t.Log("數據庫清理完成")
 }

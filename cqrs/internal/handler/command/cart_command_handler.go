@@ -207,7 +207,7 @@ func (h *cartCommandHandler) HandleCartUpdated(ctx context.Context, cmd cmd_mode
 			err = h.productService.SubProductStock(ctx, item.ProductID, uint(item.Quantity))
 		case cmd_model.CartSubItem:
 			// 加庫存
-			err = h.productService.AddProductStock(ctx, item.ProductID, uint(item.Quantity))
+			_, err = h.productService.AddProductStock(ctx, item.ProductID, uint(item.Quantity))
 		}
 		if err != nil {
 			go h.produceCartFailedEvent(ctx, user.UserID, err)

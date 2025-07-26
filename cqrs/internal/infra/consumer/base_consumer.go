@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"sync"
 
 	cmd_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/command"
 	evt_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/event"
@@ -69,6 +70,7 @@ type IBaseConsumer interface {
 type baseConsumer struct {
 	consumer  consumer.Consumer
 	handler   ConsumerHandler
+	closeOnce sync.Once
 	closeChan chan struct{}
 }
 
@@ -132,6 +134,9 @@ func (c *baseConsumer) Stop() {
 		return
 	}
 
-	close(c.closeChan)
+	c.closeOnce.Do(func() {
+		close(c.closeChan)
+	})
+
 	c.consumer.Close()
 }

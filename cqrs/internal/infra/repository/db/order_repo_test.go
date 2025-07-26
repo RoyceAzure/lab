@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -59,7 +60,7 @@ func (suite *OrderRepoTestSuite) createTestUser() *model.User {
 		UserPhone:   "1234567890",
 		UserAddress: "123 Test St",
 	}
-	suite.userRepo.CreateUser(user)
+	suite.userRepo.CreateUser(context.Background(), user)
 	return user
 }
 

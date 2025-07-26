@@ -14,6 +14,7 @@ const (
 	OrderStateConfirmed
 	OrderStateShipped
 	OrderStateCancelled
+	OrderStateRefunded
 )
 
 // 訂單聚合

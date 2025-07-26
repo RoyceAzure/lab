@@ -29,6 +29,7 @@ func (c *CartCommandConsumer) transformData(msg message.Message) (consumeData, e
 
 	var cmd cmd_model.Command
 	var zero consumeData
+
 	switch commandType {
 	case cmd_model.CartCreatedCommandName:
 		cmd = &cmd_model.CartCreatedCommand{}

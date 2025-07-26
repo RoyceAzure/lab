@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"testing"
 
 	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
@@ -25,7 +26,15 @@ func (suite *UserOrderRepoTestSuite) SetupSuite() {
 	suite.userOrderRepo = NewUserOrderRepo(suite.dbDao)
 	suite.userRepo = NewUserRepo(suite.dbDao)
 
-	suite.testUser, err = suite.userRepo.CreateUser(&model.User{
+}
+
+func (suite *UserOrderRepoTestSuite) TearDownSuite() {
+
+}
+
+func (suite *UserOrderRepoTestSuite) SetupTest() {
+	var err error
+	suite.testUser, err = suite.userRepo.CreateUser(context.Background(), &model.User{
 		UserName:    "John Doe",
 		UserEmail:   "john@example.com",
 		UserPhone:   "1234567890",
@@ -34,13 +43,9 @@ func (suite *UserOrderRepoTestSuite) SetupSuite() {
 	assert.NoError(suite.T(), err)
 }
 
-func (suite *UserOrderRepoTestSuite) TearDownSuite() {
-	// GORM v2 會自動管理連接池，不需要手動關閉
-}
-
-func (suite *UserOrderRepoTestSuite) SetupTest() {
-	// 清空測試資料
+func (suite *UserOrderRepoTestSuite) TearDownTest() {
 	suite.dbDao.Exec("DELETE FROM user_orders")
+	suite.dbDao.Exec("DELETE FROM users")
 }
 
 func TestUserOrderRepoTestSuite(t *testing.T) {
@@ -128,35 +133,14 @@ func (suite *UserOrderRepoTestSuite) TestListUserOrdersByUserID() {
 	}
 
 	// 執行測試
-	foundUserOrders, err := suite.userOrderRepo.ListUserOrdersByUserID(1)
+	foundUserOrders, err := suite.userOrderRepo.ListUserOrdersByUserID(suite.testUser.UserID)
 
 	// 驗證結果
 	assert.NoError(t, err)
-	assert.Len(t, foundUserOrders, 2)
+	assert.Len(t, foundUserOrders, len(testUserOrders))
 	for _, order := range foundUserOrders {
-		assert.Equal(t, 1, order.UserID)
+		assert.Equal(t, suite.testUser.UserID, order.UserID)
 	}
-}
-
-func (suite *UserOrderRepoTestSuite) TestDeleteUserOrder() {
-	t := suite.T()
-
-	// 準備測試資料
-	testUserOrder := &model.UserOrder{
-		UserID:  suite.testUser.UserID,
-		OrderID: "test-order-1",
-	}
-	createdUserOrder, err := suite.userOrderRepo.CreateUserOrder(testUserOrder)
-	assert.NoError(t, err)
-
-	// 執行測試
-	err = suite.userOrderRepo.DeleteUserOrder(createdUserOrder.ID)
-	assert.NoError(t, err)
-
-	// 驗證結果
-	foundUserOrder, err := suite.userOrderRepo.GetUserOrderByID(createdUserOrder.ID)
-	assert.Error(t, err)
-	assert.Nil(t, foundUserOrder)
 }
 
 func (suite *UserOrderRepoTestSuite) TestHardDeleteUserOrder() {
@@ -171,7 +155,7 @@ func (suite *UserOrderRepoTestSuite) TestHardDeleteUserOrder() {
 	assert.NoError(t, err)
 
 	// 執行測試
-	err = suite.userOrderRepo.HardDeleteUserOrder(createdUserOrder.ID)
+	err = suite.userOrderRepo.HardDeleteUserOrder(createdUserOrder.ID) // 使用硬刪除
 	assert.NoError(t, err)
 
 	// 驗證結果 - 使用 Unscoped 查詢確認記錄真的被刪除

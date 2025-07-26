@@ -14,7 +14,7 @@ import (
 
 type ProductRepoTestSuite struct {
 	suite.Suite
-	productRepo *ProductRepo
+	productRepo *ProductRedisRepo
 }
 
 func (suite *ProductRepoTestSuite) SetupTest() {
@@ -40,7 +40,7 @@ func (suite *ProductRepoTestSuite) TestBasicProductStockOperations() {
 	assert.Equal(suite.T(), uint(100), stock)
 
 	// 增加庫存
-	err = suite.productRepo.AddProductStock(ctx, "test1", 50)
+	_, err = suite.productRepo.AddProductStock(ctx, "test1", 50)
 	assert.NoError(suite.T(), err)
 
 	// 檢查增加後的庫存
@@ -83,7 +83,11 @@ func (suite *ProductRepoTestSuite) TestConcurrentStockOperations() {
 			case <-ctx.Done():
 				return ctx.Err()
 			default:
-				return suite.productRepo.AddProductStock(ctx, "test2", addQuantity)
+				_, err := suite.productRepo.AddProductStock(ctx, "test2", addQuantity)
+				if err != nil {
+					return err
+				}
+				return nil
 			}
 		})
 	}

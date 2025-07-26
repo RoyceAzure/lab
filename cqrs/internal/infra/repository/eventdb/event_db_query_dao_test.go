@@ -34,7 +34,7 @@ type EventDBQueryTestSuite struct {
 	dbDao       *db.DbDao
 	userRepo    *db.UserRepo
 	redisClient *redis.Client
-	productRepo *redis_repo.ProductRepo
+	productRepo *redis_repo.ProductRedisRepo
 
 	// 測試資料
 	testUsers     []*model.User
@@ -188,12 +188,12 @@ func (s *EventDBQueryTestSuite) SetupTest() {
 			UserAddress: "test address",
 		}
 		// 建立測試使用者並獲取創建後的用戶
-		createdUser, err := s.userRepo.CreateUser(user)
+		createdUser, err := s.userRepo.CreateUser(s.ctx, user)
 		s.Require().NoError(err)
 		s.testUsers[i] = createdUser
 
 		// 確保使用者已經被創建
-		_, err = s.userRepo.GetUserByID(createdUser.UserID)
+		_, err = s.userRepo.GetUserByID(s.ctx, createdUser.UserID)
 		s.Require().NoError(err)
 	}
 
@@ -233,14 +233,14 @@ func (s *EventDBQueryTestSuite) TearDownTest() {
 
 	// 清理測試使用者資料
 	for _, user := range s.testUsers {
-		err := s.userRepo.HardDeleteUser(user.UserID)
+		err := s.userRepo.HardDeleteUser(s.ctx, user.UserID)
 		s.Require().NoError(err)
 	}
 
 	// 清理測試商品資料
 	for _, product := range s.testProducts {
 		// 清理商品庫存（Redis）
-		err := s.productRepo.AddProductStock(s.ctx, product.ProductID, 0)
+		_, err := s.productRepo.AddProductStock(s.ctx, product.ProductID, 0)
 		s.Require().NoError(err)
 		// 清理商品資料
 		err = s.productRepo.DeleteProductStock(s.ctx, product.ProductID)

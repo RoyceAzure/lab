@@ -9,6 +9,27 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// IProductRedisRepository 定義 Redis 商品操作的介面
+type IProductRedisRepository interface {
+	// CreateProductStock 創建商品庫存
+	CreateProductStock(ctx context.Context, productID string, stock uint) error
+
+	// GetProductStock 取得商品庫存數量
+	GetProductStock(ctx context.Context, productID string) (int, error)
+
+	// AddProductStock 增加商品庫存數量
+	AddProductStock(ctx context.Context, productID string, quantity uint) (int, error)
+
+	// UpdateProductStock 修改商品庫存數量
+	UpdateProductStock(ctx context.Context, productID string, quantity uint) error
+
+	// DeleteProductStock 刪除商品庫存
+	DeleteProductStock(ctx context.Context, productID string) error
+
+	// DeductProductStock 原子性扣減庫存
+	DeductProductStock(ctx context.Context, productID string, quantity uint) (int, error)
+}
+
 type ProductRepoError error
 
 var (
@@ -16,12 +37,18 @@ var (
 	ErrProductStockNotEnough ProductRepoError = errors.New("product stock not enough")
 )
 
-type ProductRepo struct {
+/*	redis 專注商品庫存
+	結構:
+	商品ID: {
+		stock: 100,
+	}*/
+
+type ProductRedisRepo struct {
 	productCache *redis.Client
 }
 
-func NewProductRepo(productCache *redis.Client) *ProductRepo {
-	return &ProductRepo{productCache: productCache}
+func NewProductRepo(productCache *redis.Client) *ProductRedisRepo {
+	return &ProductRedisRepo{productCache: productCache}
 }
 
 // redis 商品庫存
@@ -39,7 +66,7 @@ func generateProductStockKey(productID string) string {
 	return fmt.Sprintf("product:%s:stock", productID)
 }
 
-func (s *ProductRepo) CreateProductStock(ctx context.Context, productID string, stock uint) error {
+func (s *ProductRedisRepo) CreateProductStock(ctx context.Context, productID string, stock uint) error {
 	redisKey := generateProductStockKey(productID)
 	err := s.productCache.HSet(ctx, redisKey, "stock", stock).Err()
 	if err != nil {
@@ -48,21 +75,11 @@ func (s *ProductRepo) CreateProductStock(ctx context.Context, productID string, 
 	return nil
 }
 
-// // 取得商品資訊q
-// func (s *ProductRepo) GetProduct(ctx context.Context, productID string) (*model.Product, error) {
-// 	redisKey := generateProductStockKey(productID)
-// 	product, err := s.productCache.HGet(ctx, redisKey, "product").Result()
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	return product, nil
-// }
-
 // 取得 庫存商品數量
 // 錯誤:
 //   - ProductNotFound: 商品不存在
 //   - err: 其他錯誤
-func (s *ProductRepo) GetProductStock(ctx context.Context, productID string) (uint, error) {
+func (s *ProductRedisRepo) GetProductStock(ctx context.Context, productID string) (int, error) {
 	redisKey := generateProductStockKey(productID)
 	stock, err := s.productCache.HGet(ctx, redisKey, "stock").Result()
 	if err != nil {
@@ -73,18 +90,29 @@ func (s *ProductRepo) GetProductStock(ctx context.Context, productID string) (ui
 		return 0, ErrProductNotFound
 	}
 
-	stockInt, err := strconv.ParseUint(stock, 10, 64)
+	stockInt, err := strconv.ParseInt(stock, 10, 64)
 	if err != nil {
 		return 0, err
 	}
 
-	return uint(stockInt), nil
+	return int(stockInt), nil
+}
+
+// 增加庫存商品數量
+func (s *ProductRedisRepo) AddProductStock(ctx context.Context, productID string, quantity uint) (int, error) {
+	redisKey := generateProductStockKey(productID)
+	// HIncrBy 會返回增加後的值
+	result := s.productCache.HIncrBy(ctx, redisKey, "stock", int64(quantity))
+	if err := result.Err(); err != nil {
+		return 0, err
+	}
+	return int(result.Val()), nil
 }
 
 // 修改庫存商品數量
-func (s *ProductRepo) AddProductStock(ctx context.Context, productID string, quantity uint) error {
+func (s *ProductRedisRepo) UpdateProductStock(ctx context.Context, productID string, quantity uint) error {
 	redisKey := generateProductStockKey(productID)
-	err := s.productCache.HIncrBy(ctx, redisKey, "stock", int64(quantity)).Err()
+	err := s.productCache.HSet(ctx, redisKey, "stock", quantity).Err()
 	if err != nil {
 		return err
 	}
@@ -92,7 +120,7 @@ func (s *ProductRepo) AddProductStock(ctx context.Context, productID string, qua
 }
 
 // DeleteProductStock 直接刪除商品資料
-func (s *ProductRepo) DeleteProductStock(ctx context.Context, productID string) error {
+func (s *ProductRedisRepo) DeleteProductStock(ctx context.Context, productID string) error {
 	redisKey := generateProductStockKey(productID)
 	err := s.productCache.Del(ctx, redisKey).Err()
 	if err != nil {
@@ -102,7 +130,15 @@ func (s *ProductRepo) DeleteProductStock(ctx context.Context, productID string) 
 }
 
 // 原子性扣減庫存
-func (s *ProductRepo) DeductProductStock(ctx context.Context, productID string, quantity uint) (int64, error) {
+/*
+	返回值:
+		- 扣減後的庫存數量
+		- 錯誤:
+			- ErrProductNotFound: 商品不存在
+			- ErrProductStockNotEnough: 庫存不足
+			- err: 其他錯誤
+*/
+func (s *ProductRedisRepo) DeductProductStock(ctx context.Context, productID string, quantity uint) (int, error) {
 	redisKey := generateProductStockKey(productID)
 
 	const stockDeductionScript = `
@@ -145,6 +181,9 @@ func (s *ProductRepo) DeductProductStock(ctx context.Context, productID string, 
 	case resultInt == -2:
 		return 0, fmt.Errorf("%w: product with id %s stock not enough", ErrProductStockNotEnough, productID)
 	default:
-		return resultInt, nil // 返回扣減後的庫存（可能為 0，表示剛好扣完）
+		return int(resultInt), nil
 	}
 }
+
+// 確保 ProductRedisRepo 實現了 ProductRedisRepository 介面
+var _ IProductRedisRepository = (*ProductRedisRepo)(nil)

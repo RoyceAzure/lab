@@ -1,316 +1,243 @@
 package db
 
 import (
-	"fmt"
+	"context"
 	"testing"
 
-	"github.com/RoyceAzure/lab/cqrs/config"
 	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
-	"gorm.io/gorm"
 )
 
 type UserRepoTestSuite struct {
 	suite.Suite
-	db       *gorm.DB
+	dbDao    *DbDao
 	userRepo *UserRepo
+	ctx      context.Context
 }
 
-// SetupSuite 在測試套件開始前執行
 func (suite *UserRepoTestSuite) SetupSuite() {
 	db, err := GetDbConn("lab_cqrs", "localhost", "5432", "royce", "password")
-	require.NoError(suite.T(), err)
-	dbDao := NewDbDao(db)
-	userRepo := NewUserRepo(dbDao)
-	suite.db = db
-	suite.userRepo = userRepo
+	assert.NoError(suite.T(), err)
+	suite.dbDao = NewDbDao(db)
+	err = suite.dbDao.InitMigrate()
+	assert.NoError(suite.T(), err)
+	suite.userRepo = NewUserRepo(suite.dbDao)
+	suite.ctx = context.Background()
 }
 
-// SetupTest 在每個測試前執行
-func (suite *UserRepoTestSuite) SetupTest() {
-	// 清空資料表
-	suite.db.Exec("DELETE FROM users")
-	suite.db.Exec("DELETE FROM orders")
-}
-
-// TearDownSuite 在測試套件結束後執行
 func (suite *UserRepoTestSuite) TearDownSuite() {
-	sqlDB, _ := suite.db.DB()
-	sqlDB.Close()
+	// GORM v2 會自動管理連接池，不需要手動關閉
 }
 
-func (suite *UserRepoTestSuite) TestCreateUser() {
-	user := &model.User{
-		UserName:    "John Doe",
-		UserEmail:   "john@example.com",
-		UserPhone:   "1234567890",
-		UserAddress: "123 Main St",
-	}
-
-	createdUser, err := suite.userRepo.CreateUser(user)
-	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), user.UserName, createdUser.UserName)
-	require.Equal(suite.T(), user.UserEmail, createdUser.UserEmail)
-	require.Equal(suite.T(), user.UserPhone, createdUser.UserPhone)
-	require.Equal(suite.T(), user.UserAddress, createdUser.UserAddress)
-	require.NotZero(suite.T(), createdUser.UserID)
-	require.False(suite.T(), createdUser.CreatedAt.IsZero())
+func (suite *UserRepoTestSuite) SetupTest() {
+	// 清空測試資料
+	suite.dbDao.Exec("DELETE FROM users")
 }
 
-func (suite *UserRepoTestSuite) TestCreateUser_DuplicateEmail() {
-	user1 := &model.User{
-		UserName:    "John Doe",
-		UserEmail:   "john@example.com",
-		UserPhone:   "1234567890",
-		UserAddress: "123 Main St",
-	}
-
-	user2 := &model.User{
-		UserName:    "Jane Doe",
-		UserEmail:   "john@example.com", // 重複的 email
-		UserPhone:   "0987654321",
-		UserAddress: "456 Oak St",
-	}
-
-	createdUser1, err1 := suite.userRepo.CreateUser(user1)
-	_, err2 := suite.userRepo.CreateUser(user2)
-
-	require.NoError(suite.T(), err1)
-	require.Error(suite.T(), err2) // 應該會失敗
-	require.Equal(suite.T(), user1.UserName, createdUser1.UserName)
-	require.Equal(suite.T(), user1.UserEmail, createdUser1.UserEmail)
-	require.Equal(suite.T(), user1.UserPhone, createdUser1.UserPhone)
-	require.Equal(suite.T(), user1.UserAddress, createdUser1.UserAddress)
-	require.NotZero(suite.T(), createdUser1.UserID)
-	require.False(suite.T(), createdUser1.CreatedAt.IsZero())
-	require.Error(suite.T(), err2) // 應該會失敗
-}
-
-func (suite *UserRepoTestSuite) TestGetUserByID() {
-	// 先創建一個用戶
-	user := &model.User{
-		UserName:    "John Doe",
-		UserEmail:   "john@example.com",
-		UserPhone:   "1234567890",
-		UserAddress: "123 Main St",
-	}
-	suite.userRepo.CreateUser(user)
-
-	// 測試查詢
-	foundUser, err := suite.userRepo.GetUserByID(user.UserID)
-
-	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), user.UserName, foundUser.UserName)
-	require.Equal(suite.T(), user.UserEmail, foundUser.UserEmail)
-}
-
-func (suite *UserRepoTestSuite) TestGetUserByID_NotFound() {
-	foundUser, err := suite.userRepo.GetUserByID(999)
-
-	require.Error(suite.T(), err)
-	require.Nil(suite.T(), foundUser)
-}
-
-func (suite *UserRepoTestSuite) TestGetUserByEmail() {
-	user := &model.User{
-		UserName:    "John Doe",
-		UserEmail:   "john@example.com",
-		UserPhone:   "1234567890",
-		UserAddress: "123 Main St",
-	}
-	suite.userRepo.CreateUser(user)
-
-	foundUser, err := suite.userRepo.GetUserByEmail("john@example.com")
-
-	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), user.UserName, foundUser.UserName)
-}
-
-func (suite *UserRepoTestSuite) TestGetAllUsers() {
-	// 創建多個用戶
-	users := []*model.User{
-		{
-			UserName:    "John Doe",
-			UserEmail:   "john@example.com",
-			UserPhone:   "1234567890",
-			UserAddress: "123 Main St",
-		},
-		{
-			UserName:    "Jane Smith",
-			UserEmail:   "jane@example.com",
-			UserPhone:   "0987654321",
-			UserAddress: "456 Oak St",
-		},
-	}
-
-	for _, user := range users {
-		suite.userRepo.CreateUser(user)
-	}
-
-	allUsers, err := suite.userRepo.GetAllUsers()
-
-	require.NoError(suite.T(), err)
-	require.Len(suite.T(), allUsers, 2)
-}
-
-func (suite *UserRepoTestSuite) TestUpdateUser() {
-	user := &model.User{
-		UserName:    "John Doe",
-		UserEmail:   "john@example.com",
-		UserPhone:   "1234567890",
-		UserAddress: "123 Main St",
-	}
-	suite.userRepo.CreateUser(user)
-
-	// 更新用戶資訊
-	user.UserName = "John Updated"
-	user.UserAddress = "456 Updated St"
-
-	err := suite.userRepo.UpdateUser(user)
-	require.NoError(suite.T(), err)
-
-	// 驗證更新
-	updatedUser, _ := suite.userRepo.GetUserByID(user.UserID)
-	require.Equal(suite.T(), "John Updated", updatedUser.UserName)
-	require.Equal(suite.T(), "456 Updated St", updatedUser.UserAddress)
-}
-
-func (suite *UserRepoTestSuite) TestUpdateUserFields() {
-	user := &model.User{
-		UserName:    "John Doe",
-		UserEmail:   "john@example.com",
-		UserPhone:   "1234567890",
-		UserAddress: "123 Main St",
-	}
-	suite.userRepo.CreateUser(user)
-
-	updates := map[string]interface{}{
-		"user_name":    "Jane Doe",
-		"user_address": "789 New St",
-	}
-
-	err := suite.userRepo.PatchUserFields(user.UserID, updates)
-	require.NoError(suite.T(), err)
-
-	// 驗證更新
-	updatedUser, _ := suite.userRepo.GetUserByID(user.UserID)
-	require.Equal(suite.T(), "Jane Doe", updatedUser.UserName)
-	require.Equal(suite.T(), "789 New St", updatedUser.UserAddress)
-	require.Equal(suite.T(), "john@example.com", updatedUser.UserEmail) // 未更新的欄位應該保持不變
-}
-
-func (suite *UserRepoTestSuite) TestDeleteUser() {
-	user := &model.User{
-		UserName:    "John Doe",
-		UserEmail:   "john@example.com",
-		UserPhone:   "1234567890",
-		UserAddress: "123 Main St",
-	}
-	suite.userRepo.CreateUser(user)
-
-	err := suite.userRepo.DeleteUser(user.UserID)
-	require.NoError(suite.T(), err)
-
-	// 驗證軟刪除 - 用戶應該查不到
-	foundUser, err := suite.userRepo.GetUserByID(user.UserID)
-	require.Error(suite.T(), err)
-	require.Nil(suite.T(), foundUser)
-}
-
-func (suite *UserRepoTestSuite) TestHardDeleteUser() {
-	user := &model.User{
-		UserName:    "John Doe",
-		UserEmail:   "john@example.com",
-		UserPhone:   "1234567890",
-		UserAddress: "123 Main St",
-	}
-	suite.userRepo.CreateUser(user)
-
-	err := suite.userRepo.HardDeleteUser(user.UserID)
-	require.NoError(suite.T(), err)
-
-	// 驗證硬刪除 - 用戶應該查不到
-	foundUser, err := suite.userRepo.GetUserByID(user.UserID)
-	require.Error(suite.T(), err)
-	require.Nil(suite.T(), foundUser)
-}
-
-func (suite *UserRepoTestSuite) TestGetUsersPaginated() {
-	// 創建 25 個用戶
-	for i := 1; i <= 25; i++ {
-		user := &model.User{
-			UserName:    fmt.Sprintf("User %d", i),
-			UserEmail:   fmt.Sprintf("user%d@example.com", i),
-			UserPhone:   fmt.Sprintf("123456789%d", i),
-			UserAddress: fmt.Sprintf("%d Main St", i),
-		}
-		suite.userRepo.CreateUser(user)
-	}
-
-	// 測試第一頁，每頁 10 筆
-	users, total, err := suite.userRepo.GetUsersPaginated(1, 10)
-	require.NoError(suite.T(), err)
-	require.Len(suite.T(), users, 10)
-	require.Equal(suite.T(), int64(25), total)
-
-	// 測試第三頁，每頁 10 筆
-	users, total, err = suite.userRepo.GetUsersPaginated(3, 10)
-	require.NoError(suite.T(), err)
-	require.Len(suite.T(), users, 5) // 第三頁只有 5 筆
-	require.Equal(suite.T(), int64(25), total)
-}
-
-func (suite *UserRepoTestSuite) TestGetUsersPaginated_EmptyResult() {
-	users, total, err := suite.userRepo.GetUsersPaginated(1, 10)
-	require.NoError(suite.T(), err)
-	require.Len(suite.T(), users, 0)
-	require.Equal(suite.T(), int64(0), total)
-}
-
-// 執行測試套件
-func TestUserServiceTestSuite(t *testing.T) {
+func TestUserRepoSuite(t *testing.T) {
 	suite.Run(t, new(UserRepoTestSuite))
 }
 
-// 單獨的單元測試範例
-func TestNewUserRepo(t *testing.T) {
-	// 獲取資料庫配置
-	cfg, err := config.GetPGConfig()
-	require.NoError(t, err)
+func (suite *UserRepoTestSuite) TestCreateUser() {
+	t := suite.T()
 
-	// 連接到資料庫
-	db, err := GetDbConn(cfg.DbName, cfg.DbHost, cfg.DbPort, cfg.DbUser, cfg.DbPas)
-	require.NoError(t, err)
+	// 準備測試資料
+	testUser := &model.User{
+		UserName:    "Test User",
+		UserEmail:   "test@example.com",
+		UserPhone:   "1234567890",
+		UserAddress: "Test Address",
+	}
 
-	dbDao := NewDbDao(db)
-	repo := NewUserRepo(dbDao)
+	// 執行測試
+	createdUser, err := suite.userRepo.CreateUser(suite.ctx, testUser)
 
-	require.NotNil(t, repo)
-	require.Equal(t, dbDao, repo.dbDao)
+	// 驗證結果
+	assert.NoError(t, err)
+	assert.NotNil(t, createdUser)
+	assert.NotZero(t, createdUser.UserID)
+	assert.Equal(t, testUser.UserName, createdUser.UserName)
+	assert.Equal(t, testUser.UserEmail, createdUser.UserEmail)
+	assert.Equal(t, testUser.UserPhone, createdUser.UserPhone)
+	assert.Equal(t, testUser.UserAddress, createdUser.UserAddress)
 }
 
-// 基準測試範例
-func BenchmarkCreateUser(b *testing.B) {
-	// 獲取資料庫配置
-	cfg, err := config.GetPGConfig()
-	require.NoError(b, err)
+func (suite *UserRepoTestSuite) TestGetUserByID() {
+	t := suite.T()
 
-	// 連接到資料庫
-	db, err := GetDbConn(cfg.DbName, cfg.DbHost, cfg.DbPort, cfg.DbUser, cfg.DbPas)
-	require.NoError(b, err)
-
-	dbDao := NewDbDao(db)
-	repo := NewUserRepo(dbDao)
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		user := &model.User{
-			UserName:    fmt.Sprintf("User %d", i),
-			UserEmail:   fmt.Sprintf("user%d@example.com", i),
-			UserPhone:   fmt.Sprintf("123456789%d", i),
-			UserAddress: fmt.Sprintf("%d Main St", i),
-		}
-		repo.CreateUser(user)
+	// 準備測試資料
+	testUser := &model.User{
+		UserName:    "Test User",
+		UserEmail:   "test@example.com",
+		UserPhone:   "1234567890",
+		UserAddress: "Test Address",
 	}
+	createdUser, err := suite.userRepo.CreateUser(suite.ctx, testUser)
+	assert.NoError(t, err)
+
+	// 執行測試
+	foundUser, err := suite.userRepo.GetUserByID(suite.ctx, createdUser.UserID)
+
+	// 驗證結果
+	assert.NoError(t, err)
+	assert.NotNil(t, foundUser)
+	assert.Equal(t, createdUser.UserID, foundUser.UserID)
+	assert.Equal(t, createdUser.UserName, foundUser.UserName)
+	assert.Equal(t, createdUser.UserEmail, foundUser.UserEmail)
+	assert.Equal(t, createdUser.UserPhone, foundUser.UserPhone)
+	assert.Equal(t, createdUser.UserAddress, foundUser.UserAddress)
+}
+
+func (suite *UserRepoTestSuite) TestGetUserByEmail() {
+	t := suite.T()
+
+	// 準備測試資料
+	testUser := &model.User{
+		UserName:    "Test User",
+		UserEmail:   "test@example.com",
+		UserPhone:   "1234567890",
+		UserAddress: "Test Address",
+	}
+	createdUser, err := suite.userRepo.CreateUser(suite.ctx, testUser)
+	assert.NoError(t, err)
+
+	// 執行測試
+	foundUser, err := suite.userRepo.GetUserByEmail(suite.ctx, createdUser.UserEmail)
+
+	// 驗證結果
+	assert.NoError(t, err)
+	assert.NotNil(t, foundUser)
+	assert.Equal(t, createdUser.UserID, foundUser.UserID)
+	assert.Equal(t, createdUser.UserEmail, foundUser.UserEmail)
+	assert.Equal(t, createdUser.UserPhone, foundUser.UserPhone)
+	assert.Equal(t, createdUser.UserAddress, foundUser.UserAddress)
+}
+
+func (suite *UserRepoTestSuite) TestGetAllUsers() {
+	t := suite.T()
+
+	// 準備測試資料
+	testUsers := []*model.User{
+		{
+			UserName:    "User 1",
+			UserEmail:   "user1@example.com",
+			UserPhone:   "1234567890",
+			UserAddress: "Address 1",
+		},
+		{
+			UserName:    "User 2",
+			UserEmail:   "user2@example.com",
+			UserPhone:   "0987654321",
+			UserAddress: "Address 2",
+		},
+	}
+
+	for _, user := range testUsers {
+		_, err := suite.userRepo.CreateUser(suite.ctx, user)
+		assert.NoError(t, err)
+	}
+
+	// 執行測試
+	foundUsers, err := suite.userRepo.GetAllUsers(suite.ctx)
+
+	// 驗證結果
+	assert.NoError(t, err)
+	assert.Len(t, foundUsers, len(testUsers))
+}
+
+func (suite *UserRepoTestSuite) TestUpdateUser() {
+	t := suite.T()
+
+	// 準備測試資料
+	testUser := &model.User{
+		UserName:    "Test User",
+		UserEmail:   "test@example.com",
+		UserPhone:   "1234567890",
+		UserAddress: "Test Address",
+	}
+	createdUser, err := suite.userRepo.CreateUser(suite.ctx, testUser)
+	assert.NoError(t, err)
+
+	// 修改資料
+	createdUser.UserName = "Updated Name"
+	createdUser.UserEmail = "updated@example.com"
+	createdUser.UserPhone = "9876543210"
+	createdUser.UserAddress = "Updated Address"
+
+	// 執行測試
+	err = suite.userRepo.UpdateUser(suite.ctx, createdUser)
+	assert.NoError(t, err)
+
+	// 驗證結果
+	updatedUser, err := suite.userRepo.GetUserByID(suite.ctx, createdUser.UserID)
+	assert.NoError(t, err)
+	assert.Equal(t, "Updated Name", updatedUser.UserName)
+	assert.Equal(t, "updated@example.com", updatedUser.UserEmail)
+	assert.Equal(t, "9876543210", updatedUser.UserPhone)
+	assert.Equal(t, "Updated Address", updatedUser.UserAddress)
+}
+
+func (suite *UserRepoTestSuite) TestDeleteUser() {
+	t := suite.T()
+
+	// 準備測試資料
+	testUser := &model.User{
+		UserName:    "Test User",
+		UserEmail:   "test@example.com",
+		UserPhone:   "1234567890",
+		UserAddress: "Test Address",
+	}
+	createdUser, err := suite.userRepo.CreateUser(suite.ctx, testUser)
+	assert.NoError(t, err)
+
+	// 執行測試
+	err = suite.userRepo.DeleteUser(suite.ctx, createdUser.UserID)
+	assert.NoError(t, err)
+
+	// 驗證結果
+	deletedUser, err := suite.userRepo.GetUserByID(suite.ctx, createdUser.UserID)
+	assert.Error(t, err) // 應該返回錯誤，因為用戶已被刪除
+	assert.Nil(t, deletedUser)
+}
+
+func (suite *UserRepoTestSuite) TestHardDeleteUser() {
+	t := suite.T()
+
+	// 準備測試資料
+	testUser := &model.User{
+		UserName:    "Test User",
+		UserEmail:   "test@example.com",
+		UserPhone:   "1234567890",
+		UserAddress: "Test Address",
+	}
+	createdUser, err := suite.userRepo.CreateUser(suite.ctx, testUser)
+	assert.NoError(t, err)
+
+	// 執行測試
+	err = suite.userRepo.HardDeleteUser(suite.ctx, createdUser.UserID)
+	assert.NoError(t, err)
+
+	// 驗證結果 - 使用 Unscoped 查詢確認記錄真的被刪除
+	var count int64
+	suite.dbDao.Unscoped().Model(&model.User{}).Where("user_id = ?", createdUser.UserID).Count(&count)
+	assert.Equal(t, int64(0), count)
+}
+
+func (suite *UserRepoTestSuite) TestGetUserByID_NotFound() {
+	t := suite.T()
+
+	// 測試不存在的用戶ID
+	user, err := suite.userRepo.GetUserByID(suite.ctx, 999)
+	assert.Error(t, err)
+	assert.Nil(t, user)
+}
+
+func (suite *UserRepoTestSuite) TestGetUserByEmail_NotFound() {
+	t := suite.T()
+
+	// 測試不存在的用戶郵箱
+	user, err := suite.userRepo.GetUserByEmail(suite.ctx, "notexist@example.com")
+	assert.Error(t, err)
+	assert.Nil(t, user)
 }

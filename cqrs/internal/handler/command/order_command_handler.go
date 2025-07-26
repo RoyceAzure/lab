@@ -8,8 +8,8 @@ import (
 	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
 	cmd_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/command"
 	evt_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/event"
-	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/eventdb"
+	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/redis_repo"
 	"github.com/RoyceAzure/lab/cqrs/internal/pkg/util"
 	"github.com/RoyceAzure/lab/cqrs/internal/service"
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/producer"
@@ -24,13 +24,13 @@ var (
 type OrderCommandHandler struct {
 	userService          *service.UserService
 	eventDao             *eventdb.EventDao
-	productRepo          *db.ProductRepo
+	productRepo          redis_repo.IProductRedisRepository
 	orderService         *service.OrderService
 	toOrderEventProducer producer.Producer
 }
 
 // 只處理Order, 不處理Cart
-func NewOrderCommandHandler(orderService *service.OrderService, userService *service.UserService, eventDao *eventdb.EventDao, productRepo *db.ProductRepo, toOrderEventProducer producer.Producer) *OrderCommandHandler {
+func NewOrderCommandHandler(orderService *service.OrderService, userService *service.UserService, eventDao *eventdb.EventDao, productRepo redis_repo.IProductRedisRepository, toOrderEventProducer producer.Producer) *OrderCommandHandler {
 	return &OrderCommandHandler{orderService: orderService, userService: userService, eventDao: eventDao, productRepo: productRepo, toOrderEventProducer: toOrderEventProducer}
 }
 

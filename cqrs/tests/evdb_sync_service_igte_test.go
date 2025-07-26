@@ -2,6 +2,9 @@ package tests
 
 import (
 	"context"
+	"fmt"
+	"math/rand"
+	"sync"
 	"testing"
 	"time"
 
@@ -171,4 +174,221 @@ func (s *EventDBSyncServiceTestSuite) TestOrderCreateEventSync() {
 	s.Require().Len(order.OrderItems, len(orderEvent.Items), "訂單項目數量不匹配")
 	s.Equal(orderEvent.Items[0].ProductID, order.OrderItems[0].ProductID, "商品ID不匹配")
 	s.Equal(orderEvent.Items[0].Quantity, order.OrderItems[0].Quantity, "商品數量不匹配")
+}
+
+func (s *EventDBSyncServiceTestSuite) TestConcurrentOrderEvents() {
+	// 測試配置
+	const (
+		numUsers     = 5               // 模擬的用戶數量
+		testDuration = 5 * time.Second // 測試持續時間
+		minOrderID   = 100             // 最小訂單ID
+		maxOrderID   = 999             // 最大訂單ID
+	)
+
+	// 用於追蹤每個訂單的最後狀態
+	type lastEventRecord struct {
+		eventType evt_model.EventType
+		event     interface{}
+	}
+	lastEvents := sync.Map{}
+
+	// 生成隨機的訂單ID
+	orderIDs := make([]string, numUsers)
+	for i := 0; i < numUsers; i++ {
+		orderIDs[i] = fmt.Sprintf("%d", rand.Intn(maxOrderID-minOrderID+1)+minOrderID)
+		s.createdOrderIDs = append(s.createdOrderIDs, orderIDs[i]) // 用於清理
+	}
+
+	// 啟動同步服務
+	err := s.syncService.Start()
+	s.Require().NoError(err, "啟動同步服務失敗")
+	defer func() {
+		err := s.syncService.Stop(5 * time.Second)
+		s.Require().NoError(err, "停止同步服務失敗")
+	}()
+
+	// 啟動多個goroutine模擬用戶操作
+	var wg sync.WaitGroup
+	startTime := time.Now()
+
+	for _, orderID := range orderIDs {
+		wg.Add(1)
+		go func(orderID string) {
+			defer wg.Done()
+
+			for time.Since(startTime) < testDuration {
+				// 隨機選擇一個事件類型
+				event := s.generateRandomOrderEvent(orderID)
+
+				// 儲存事件
+				var err error
+				switch e := event.(type) {
+				case *evt_model.OrderCreatedEvent:
+					err = s.eventDBDao.SaveOrderCreatedEvent(s.ctx, e)
+				case *evt_model.OrderConfirmedEvent:
+					err = s.eventDBDao.SaveOrderConfirmedEvent(s.ctx, e)
+				case *evt_model.OrderShippedEvent:
+					err = s.eventDBDao.SaveOrderShippedEvent(s.ctx, e)
+				case *evt_model.OrderCancelledEvent:
+					err = s.eventDBDao.SaveOrderCancelledEvent(s.ctx, e)
+				case *evt_model.OrderRefundedEvent:
+					err = s.eventDBDao.SaveOrderRefundedEvent(s.ctx, e)
+				}
+
+				s.Require().NoError(err, "儲存事件失敗")
+
+				// 記錄最後的事件
+				if time.Since(startTime) >= testDuration {
+					lastEvents.Store(orderID, lastEventRecord{
+						eventType: s.getEventType(event),
+						event:     event,
+					})
+					break
+				}
+
+				// 隨機休眠一段時間
+				time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
+			}
+		}(orderID)
+	}
+
+	// 等待所有goroutine完成
+	wg.Wait()
+
+	// 等待同步處理完成
+	time.Sleep(10 * time.Second)
+
+	// 驗證每個訂單的最後狀態
+	lastEvents.Range(func(key, value interface{}) bool {
+		orderID := key.(string)
+		record := value.(lastEventRecord)
+
+		// 從 PostgreSQL 資料庫查詢訂單
+		order, err := s.orderRepo.GetOrderByID(orderID)
+		s.Require().NoError(err, "查詢訂單失敗")
+		s.Require().NotNil(order, "訂單不應為空")
+
+		// 根據最後事件類型驗證訂單狀態
+		switch record.eventType {
+		case evt_model.OrderCreatedEventName:
+			evt := record.event.(*evt_model.OrderCreatedEvent)
+			s.Equal(evt.UserID, order.UserID, "用戶ID不匹配")
+			s.Equal(evt.Amount.String(), order.Amount.String(), "訂單金額不匹配")
+			s.Equal(uint(model.OrderStatusPending), order.State, "訂單狀態不匹配")
+		case evt_model.OrderConfirmedEventName:
+			s.Equal(uint(model.OrderStatusConfirmed), order.State, "訂單狀態不匹配")
+		case evt_model.OrderShippedEventName:
+			s.Equal(uint(model.OrderStatusShipped), order.State, "訂單狀態不匹配")
+		case evt_model.OrderCancelledEventName:
+			s.Equal(uint(model.OrderStatusCancelled), order.State, "訂單狀態不匹配")
+		case evt_model.OrderRefundedEventName:
+			s.Equal(uint(model.OrderStatusRefunded), order.State, "訂單狀態不匹配")
+		}
+
+		return true
+	})
+}
+
+// generateRandomOrderEvent 生成隨機的訂單事件
+func (s *EventDBSyncServiceTestSuite) generateRandomOrderEvent(orderID string) interface{} {
+	now := time.Now()
+
+	// 隨機選擇一個事件類型
+	eventTypes := []func() interface{}{
+		func() interface{} {
+			return &evt_model.OrderCreatedEvent{
+				BaseEvent: evt_model.BaseEvent{
+					EventID:     uuid.New(),
+					EventType:   evt_model.OrderCreatedEventName,
+					AggregateID: orderID,
+					CreatedAt:   now,
+				},
+				UserID:    rand.Intn(1000), // 隨機用戶ID
+				OrderID:   orderID,
+				OrderDate: now,
+				Items: []model.OrderItemData{
+					{
+						OrderID:   orderID,
+						ProductID: fmt.Sprintf("prod_%d", rand.Intn(100)),
+						Quantity:  rand.Intn(5) + 1,
+						Price:     decimal.NewFromFloat(float64(rand.Intn(100)) + 0.99),
+					},
+				},
+				Amount:  decimal.NewFromFloat(float64(rand.Intn(1000)) + 0.99),
+				ToState: uint(model.OrderStatusPending),
+			}
+		},
+		func() interface{} {
+			return &evt_model.OrderConfirmedEvent{
+				BaseEvent: evt_model.BaseEvent{
+					EventID:     uuid.New(),
+					EventType:   evt_model.OrderConfirmedEventName,
+					AggregateID: orderID,
+					CreatedAt:   now,
+				},
+				FromState: uint(model.OrderStatusPending),
+				ToState:   uint(model.OrderStatusConfirmed),
+			}
+		},
+		func() interface{} {
+			return &evt_model.OrderShippedEvent{
+				BaseEvent: evt_model.BaseEvent{
+					EventID:     uuid.New(),
+					EventType:   evt_model.OrderShippedEventName,
+					AggregateID: orderID,
+					CreatedAt:   now,
+				},
+				TrackingCode: fmt.Sprintf("TRK%d", rand.Int63()),
+				Carrier:      "TestCarrier",
+				FromState:    uint(model.OrderStatusConfirmed),
+				ToState:      uint(model.OrderStatusShipped),
+			}
+		},
+		func() interface{} {
+			return &evt_model.OrderCancelledEvent{
+				BaseEvent: evt_model.BaseEvent{
+					EventID:     uuid.New(),
+					EventType:   evt_model.OrderCancelledEventName,
+					AggregateID: orderID,
+					CreatedAt:   now,
+				},
+				Message:   "Test cancellation",
+				FromState: uint(model.OrderStatusPending),
+				ToState:   uint(model.OrderStatusCancelled),
+			}
+		},
+		func() interface{} {
+			return &evt_model.OrderRefundedEvent{
+				BaseEvent: evt_model.BaseEvent{
+					EventID:     uuid.New(),
+					EventType:   evt_model.OrderRefundedEventName,
+					AggregateID: orderID,
+					CreatedAt:   now,
+				},
+				Amount:    decimal.NewFromFloat(float64(rand.Intn(1000)) + 0.99),
+				FromState: uint(model.OrderStatusCancelled),
+				ToState:   uint(model.OrderStatusRefunded),
+			}
+		},
+	}
+
+	return eventTypes[rand.Intn(len(eventTypes))]()
+}
+
+// getEventType 獲取事件的類型
+func (s *EventDBSyncServiceTestSuite) getEventType(event interface{}) evt_model.EventType {
+	switch e := event.(type) {
+	case *evt_model.OrderCreatedEvent:
+		return e.EventType
+	case *evt_model.OrderConfirmedEvent:
+		return e.EventType
+	case *evt_model.OrderShippedEvent:
+		return e.EventType
+	case *evt_model.OrderCancelledEvent:
+		return e.EventType
+	case *evt_model.OrderRefundedEvent:
+		return e.EventType
+	default:
+		return ""
+	}
 }

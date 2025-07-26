@@ -19,12 +19,12 @@ var (
 
 type OrderService struct {
 	orderRepo   *db.OrderRepo
-	productRepo *db.ProductRepo
+	productRepo db.IProductRepository
 	cartRepo    *redis_repo.CartRepo
 }
 
 // 購物車階段 只會寫入到redis, 不會寫入到db，所有購物車資料都要去redis取
-func NewOrderService(orderRepo *db.OrderRepo, productRepo *db.ProductRepo, cartRepo *redis_repo.CartRepo) *OrderService {
+func NewOrderService(orderRepo *db.OrderRepo, productRepo db.IProductRepository, cartRepo *redis_repo.CartRepo) *OrderService {
 	return &OrderService{orderRepo: orderRepo, productRepo: productRepo, cartRepo: cartRepo}
 }
 
@@ -33,12 +33,12 @@ func (o *OrderService) IsProductReservedEnough(ctx context.Context, productID st
 	// 檢查商品預留數量是否足夠
 	// 檢查redis 該購物車是否有商品
 	// 取出購物車商品數量
-	product, err := o.productRepo.GetProductByID(ctx, productID)
+	product, err := o.productRepo.GetProductStock(ctx, productID)
 	if err != nil {
 		return err
 	}
 
-	if product.Reserved < uint(quantity) {
+	if product < quantity {
 		return ErrProductReservedNotEnough
 	}
 	return nil
