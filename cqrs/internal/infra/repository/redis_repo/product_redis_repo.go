@@ -40,8 +40,12 @@ var (
 /*	redis 專注商品庫存
 	結構:
 	商品ID: {
-		stock: 100,
+		reserved: 100,
 	}*/
+
+var (
+	ReservedKey = "reserved"
+)
 
 type ProductRedisRepo struct {
 	productCache *redis.Client
@@ -56,19 +60,19 @@ func NewProductRepo(productCache *redis.Client) *ProductRedisRepo {
 // 結構:
 //
 //	商品ID: {
-//		stock: 100,
+//		reserved: 100,
 //	}
 //
 //	商品ID: {
-//		stock: 100,
+//		reserved: 100,
 //	}
 func generateProductStockKey(productID string) string {
-	return fmt.Sprintf("product:%s:stock", productID)
+	return fmt.Sprintf("product:%s:%s", productID, ReservedKey)
 }
 
 func (s *ProductRedisRepo) CreateProductStock(ctx context.Context, productID string, stock uint) error {
 	redisKey := generateProductStockKey(productID)
-	err := s.productCache.HSet(ctx, redisKey, "stock", stock).Err()
+	err := s.productCache.HSet(ctx, redisKey, ReservedKey, stock).Err()
 	if err != nil {
 		return err
 	}
@@ -81,7 +85,7 @@ func (s *ProductRedisRepo) CreateProductStock(ctx context.Context, productID str
 //   - err: 其他錯誤
 func (s *ProductRedisRepo) GetProductStock(ctx context.Context, productID string) (int, error) {
 	redisKey := generateProductStockKey(productID)
-	stock, err := s.productCache.HGet(ctx, redisKey, "stock").Result()
+	stock, err := s.productCache.HGet(ctx, redisKey, ReservedKey).Result()
 	if err != nil {
 		return 0, err
 	}
@@ -102,7 +106,7 @@ func (s *ProductRedisRepo) GetProductStock(ctx context.Context, productID string
 func (s *ProductRedisRepo) AddProductStock(ctx context.Context, productID string, quantity uint) (int, error) {
 	redisKey := generateProductStockKey(productID)
 	// HIncrBy 會返回增加後的值
-	result := s.productCache.HIncrBy(ctx, redisKey, "stock", int64(quantity))
+	result := s.productCache.HIncrBy(ctx, redisKey, ReservedKey, int64(quantity))
 	if err := result.Err(); err != nil {
 		return 0, err
 	}
@@ -112,7 +116,7 @@ func (s *ProductRedisRepo) AddProductStock(ctx context.Context, productID string
 // 修改庫存商品數量
 func (s *ProductRedisRepo) UpdateProductStock(ctx context.Context, productID string, quantity uint) error {
 	redisKey := generateProductStockKey(productID)
-	err := s.productCache.HSet(ctx, redisKey, "stock", quantity).Err()
+	err := s.productCache.HSet(ctx, redisKey, ReservedKey, quantity).Err()
 	if err != nil {
 		return err
 	}
@@ -165,7 +169,7 @@ func (s *ProductRedisRepo) DeductProductStock(ctx context.Context, productID str
 	return new_stock
 	`
 
-	result, err := s.productCache.Eval(ctx, stockDeductionScript, []string{redisKey}, quantity, "stock").Result()
+	result, err := s.productCache.Eval(ctx, stockDeductionScript, []string{redisKey}, quantity, ReservedKey).Result()
 	if err != nil {
 		return 0, fmt.Errorf("failed to deduct stock: %w", err)
 	}
@@ -179,7 +183,7 @@ func (s *ProductRedisRepo) DeductProductStock(ctx context.Context, productID str
 	case resultInt == -1:
 		return 0, fmt.Errorf("%w: product with id %s not found", ErrProductNotFound, productID)
 	case resultInt == -2:
-		return 0, fmt.Errorf("%w: product with id %s stock not enough", ErrProductStockNotEnough, productID)
+		return 0, fmt.Errorf("%w: product with id %s reserved not enough", ErrProductStockNotEnough, productID)
 	default:
 		return int(resultInt), nil
 	}

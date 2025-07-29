@@ -89,6 +89,8 @@ func (p *CacheAsideProductRepo) HardDeleteProduct(ctx context.Context, id string
 }
 
 /*
+優先修改redis cache 資料，並使用異步方式修改db資料
+
 注意  db 跟 redis 儲存資料不同  這裡是特殊用法  必非傳統WiteBack模式
 redis 只儲存庫存資訊 詳細資訊存在db
 目前只需要增強 CreateProduct , AddProductStock 和 DeductProductStock 行為

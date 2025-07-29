@@ -63,20 +63,20 @@ type IProductService interface {
 }
 
 type ProductService struct {
-	productRepo db.IProductRepository
+	productWriteBackRepo db.IProductRepository
 }
 
 // NewProductService 創建新的商品服務實例
 func NewProductService(productRepo db.IProductRepository) *ProductService {
-	return &ProductService{productRepo: productRepo}
+	return &ProductService{productWriteBackRepo: productRepo}
 }
 
 func (s *ProductService) CreateProduct(ctx context.Context, product *model.Product) error {
-	return s.productRepo.CreateProduct(ctx, product)
+	return s.productWriteBackRepo.CreateProduct(ctx, product)
 }
 
 func (s *ProductService) GetProduct(ctx context.Context, productID string) (*model.Product, error) {
-	return s.productRepo.GetProductByID(ctx, productID)
+	return s.productWriteBackRepo.GetProductByID(ctx, productID)
 }
 
 // 檢查庫存是否足夠
@@ -84,7 +84,7 @@ func (s *ProductService) GetProduct(ctx context.Context, productID string) (*mod
 //   - errProductNotFound: 商品不存在
 //   - err: 其他錯誤
 func (s *ProductService) CheckProductStockEnough(ctx context.Context, productID string, quantity uint) (bool, error) {
-	stock, err := s.productRepo.GetProductStock(ctx, productID)
+	stock, err := s.productWriteBackRepo.GetProductStock(ctx, productID)
 	if err != nil {
 		return false, err
 	}
@@ -97,7 +97,7 @@ func (s *ProductService) CheckProductStockEnough(ctx context.Context, productID 
 }
 
 func (s *ProductService) AddProductStock(ctx context.Context, productID string, quantity uint) (int, error) {
-	return s.productRepo.AddProductStock(ctx, productID, quantity)
+	return s.productWriteBackRepo.AddProductStock(ctx, productID, quantity)
 }
 
 // 扣除庫存
@@ -107,16 +107,16 @@ func (s *ProductService) AddProductStock(ctx context.Context, productID string, 
 //   - errProductNotFound: 商品不存在
 //   - err: 其他錯誤
 func (s *ProductService) SubProductStock(ctx context.Context, productID string, quantity uint) error {
-	_, err := s.productRepo.DeductProductStock(ctx, productID, quantity)
+	_, err := s.productWriteBackRepo.DeductProductStock(ctx, productID, quantity)
 	return err
 }
 
 func (s *ProductService) GetProductStock(ctx context.Context, productID string) (int, error) {
-	return s.productRepo.GetProductStock(ctx, productID)
+	return s.productWriteBackRepo.GetProductStock(ctx, productID)
 }
 
 func (s *ProductService) DeleteProduct(ctx context.Context, productID string) error {
-	return s.productRepo.HardDeleteProduct(ctx, productID)
+	return s.productWriteBackRepo.HardDeleteProduct(ctx, productID)
 }
 
 var _ IProductService = (*ProductService)(nil)

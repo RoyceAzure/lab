@@ -37,7 +37,7 @@ func (suite *ProductRepoTestSuite) TestBasicProductStockOperations() {
 	// 檢查庫存
 	stock, err := suite.productRepo.GetProductStock(ctx, "test1")
 	assert.NoError(suite.T(), err)
-	assert.Equal(suite.T(), uint(100), stock)
+	assert.Equal(suite.T(), 100, stock)
 
 	// 增加庫存
 	_, err = suite.productRepo.AddProductStock(ctx, "test1", 50)
@@ -46,12 +46,12 @@ func (suite *ProductRepoTestSuite) TestBasicProductStockOperations() {
 	// 檢查增加後的庫存
 	stock, err = suite.productRepo.GetProductStock(ctx, "test1")
 	assert.NoError(suite.T(), err)
-	assert.Equal(suite.T(), uint(150), stock)
+	assert.Equal(suite.T(), 150, stock)
 
 	// 扣減庫存
 	newStock, err := suite.productRepo.DeductProductStock(ctx, "test1", 30)
 	assert.NoError(suite.T(), err)
-	assert.Equal(suite.T(), int64(120), newStock)
+	assert.Equal(suite.T(), 120, newStock)
 }
 
 func (suite *ProductRepoTestSuite) TestConcurrentStockOperations() {
@@ -133,7 +133,7 @@ func (suite *ProductRepoTestSuite) TestConcurrentStockOperations() {
 	// 計算期望的最終庫存：
 	// 初始庫存 + 增加操作總量 - 成功的扣減操作總量
 	// = initialStock + (numGoroutines * addQuantity) - ((numGoroutines - insufficientCount) * addQuantity)
-	expectedStock := uint(int(initialStock) + numGoroutines*int(addQuantity) - (numGoroutines-int(insufficientCount))*int(addQuantity))
+	expectedStock := int(initialStock) + numGoroutines*int(addQuantity) - (numGoroutines-int(insufficientCount))*int(addQuantity)
 	suite.T().Logf("Insufficient stock errors: %d", insufficientCount)
 	suite.T().Logf("Expected final stock: %d", expectedStock)
 
