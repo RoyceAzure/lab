@@ -3,10 +3,10 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db"
-	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/redis_repo"
 	"github.com/shopspring/decimal"
 )
 
@@ -17,15 +17,30 @@ var (
 	ErrProductNotFound          = errors.New("product not found")
 )
 
+type IOrderService interface {
+	CalculateOrderAmount(ctx context.Context, orderItems ...model.OrderItemData) (decimal.Decimal, error)
+	SetUpOrderItemDataFromRedis(ctx context.Context, orderItems ...model.OrderItemData) ([]model.OrderItemData, error)
+	TransferOrderItemToOrderItemData(ctx context.Context, orderItems ...model.OrderItem) ([]model.OrderItemData, error)
+	CalculateOrderAmountFromEntity(ctx context.Context, orderItems ...model.OrderItem) (decimal.Decimal, error)
+	CalculateCartAmount(ctx context.Context, cartItems ...model.CartItem) (decimal.Decimal, error)
+	CreateOrder(ctx context.Context, order *model.Order) error
+	GetOrder(ctx context.Context, orderID string) (*model.Order, error)
+	GetOrdersByUserID(ctx context.Context, userID int) ([]model.Order, error)
+	GetAllOrders(ctx context.Context) ([]model.Order, error)
+	UpdateOrder(ctx context.Context, order *model.Order) (*model.Order, error)
+	UpdateOrderState(ctx context.Context, orderID string, state uint) error
+	UpdateOrderAmount(ctx context.Context, orderID string, amount float64) error
+	HardDeleteOrder(ctx context.Context, orderID string) error
+}
+
 type OrderService struct {
-	orderRepo   *db.OrderRepo
+	orderRepo   db.IOrderRepository
 	productRepo db.IProductRepository
-	cartRepo    *redis_repo.CartRepo
 }
 
 // 購物車階段 只會寫入到redis, 不會寫入到db，所有購物車資料都要去redis取
-func NewOrderService(orderRepo *db.OrderRepo, productRepo db.IProductRepository, cartRepo *redis_repo.CartRepo) *OrderService {
-	return &OrderService{orderRepo: orderRepo, productRepo: productRepo, cartRepo: cartRepo}
+func NewOrderService(orderRepo db.IOrderRepository, productRepo db.IProductRepository) *OrderService {
+	return &OrderService{orderRepo: orderRepo, productRepo: productRepo}
 }
 
 // 檢查商品預留數量是否足夠，於創建Order時使用
@@ -44,6 +59,9 @@ func (o *OrderService) IsProductReservedEnough(ctx context.Context, productID st
 	return nil
 }
 
+/*
+計算訂單總金額
+*/
 func (o *OrderService) CalculateOrderAmount(ctx context.Context, orderItems ...model.OrderItemData) (decimal.Decimal, error) {
 	amount := decimal.NewFromInt(0)
 	for _, orderItem := range orderItems {
@@ -57,6 +75,29 @@ func (o *OrderService) CalculateOrderAmount(ctx context.Context, orderItems ...m
 		amount = amount.Add(product.Price.Mul(decimal.NewFromInt(int64(orderItem.Quantity))))
 	}
 	return amount, nil
+}
+
+/*
+還原product資訊
+Redis購物車order item只儲存productID, quantity
+*/
+func (o *OrderService) SetUpOrderItemDataFromRedis(ctx context.Context, orderItems ...model.OrderItemData) ([]model.OrderItemData, error) {
+	orderItemsWithProductInfo := make([]model.OrderItemData, 0)
+	for _, item := range orderItems {
+		product, err := o.productRepo.GetProductByID(ctx, item.ProductID)
+		if err != nil {
+			return nil, fmt.Errorf("get product info failed: %w", err)
+		}
+		orderItemsWithProductInfo = append(orderItemsWithProductInfo, model.OrderItemData{
+			OrderID:     item.OrderID,
+			ProductID:   item.ProductID,
+			ProductName: product.Name,
+			Price:       product.Price,
+			Amount:      product.Price.Mul(decimal.NewFromInt(int64(item.Quantity))),
+			Quantity:    item.Quantity,
+		})
+	}
+	return orderItemsWithProductInfo, nil
 }
 
 func TransferOrderItemDataToOrderItem(orderItemsDatas ...model.OrderItemData) ([]model.OrderItem, error) {
@@ -101,22 +142,6 @@ func (o *OrderService) CalculateOrderAmountFromEntity(ctx context.Context, order
 	return o.CalculateOrderAmount(ctx, orderItemsData...)
 }
 
-// 當修改購屋車商品數量時，檢查商品預留數量是否足夠
-func (o *OrderService) IsProductStockEnoughForUpdate(ctx context.Context, orderID string, productID string, quantity int) error {
-
-	bais := 10 // 假設原本購屋車A商品數量為10
-
-	product, err := o.productRepo.GetProductByID(ctx, productID)
-	if err != nil {
-		return err
-	}
-
-	if product.Reserved+uint(bais) < uint(quantity) {
-		return ErrProductReservedNotEnough
-	}
-	return nil
-}
-
 func (o *OrderService) CalculateCartAmount(ctx context.Context, cartItems ...model.CartItem) (decimal.Decimal, error) {
 	amount := decimal.NewFromInt(0)
 	for _, cartItem := range cartItems {
@@ -129,8 +154,12 @@ func (o *OrderService) CalculateCartAmount(ctx context.Context, cartItems ...mod
 	return amount, nil
 }
 
+func (o *OrderService) CreateOrder(ctx context.Context, order *model.Order) error {
+	return o.orderRepo.CreateOrder(ctx, order)
+}
+
 func (o *OrderService) GetOrder(ctx context.Context, orderID string) (*model.Order, error) {
-	order, err := o.orderRepo.GetOrderByID(orderID)
+	order, err := o.orderRepo.GetOrderByID(ctx, orderID)
 	if err != nil {
 		return nil, err
 	}
@@ -141,11 +170,42 @@ func (o *OrderService) GetOrder(ctx context.Context, orderID string) (*model.Ord
 	return order, nil
 }
 
+func (o *OrderService) GetOrdersByUserID(ctx context.Context, userID int) ([]model.Order, error) {
+	return o.orderRepo.GetOrdersByUserID(ctx, userID)
+}
+
+func (o *OrderService) GetAllOrders(ctx context.Context) ([]model.Order, error) {
+	return o.orderRepo.GetAllOrders(ctx)
+}
+
 func (o *OrderService) UpdateOrder(ctx context.Context, order *model.Order) (*model.Order, error) {
-	err := o.orderRepo.UpdateOrder(order)
+	err := o.orderRepo.UpdateOrder(ctx, order)
 	if err != nil {
 		return nil, err
 	}
 
 	return o.GetOrder(ctx, order.OrderID)
 }
+
+/*
+state:
+
+	OrderStatusPending   uint = 0 // 待處理
+	OrderStatusConfirmed uint = 1 // 已確認
+	OrderStatusShipped   uint = 2 // 已出貨
+	OrderStatusCancelled uint = 3 // 已取消
+	OrderStatusRefunded  uint = 4 // 已退款
+*/
+func (o *OrderService) UpdateOrderState(ctx context.Context, orderID string, state uint) error {
+	return o.orderRepo.UpdateOrderState(ctx, orderID, state)
+}
+
+func (o *OrderService) UpdateOrderAmount(ctx context.Context, orderID string, amount float64) error {
+	return o.orderRepo.UpdateOrderAmount(ctx, orderID, amount)
+}
+
+func (o *OrderService) HardDeleteOrder(ctx context.Context, orderID string) error {
+	return o.orderRepo.HardDeleteOrder(ctx, orderID)
+}
+
+var _ IOrderService = (*OrderService)(nil)

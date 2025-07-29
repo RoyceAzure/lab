@@ -59,7 +59,7 @@ func (h *cartEventHandler) HandleCartFailed(ctx context.Context, evt evt_model.E
 	//先簡單印出
 	// TODO: 後續要發紀錄並發送訊息給前端
 	_ = e
-	// fmt.Println("CartFailedEvent", e.UserID, e.Message)
+	// log.Info().Msgf("CartFailedEvent: %d, %s", e.UserID, e.Message)
 
 	return nil
 }

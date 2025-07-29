@@ -34,21 +34,25 @@ var (
 // key: userID 一個userID只會有一個購物車
 // 若後續需要由cart command handler 發送order created event，則還會需要order producer
 type cartCommandHandler struct {
-	userService    *service.UserService
-	productService *service.ProductService
-	cartRepo       *redis_repo.CartRepo
-	userOrderRepo  *db.UserOrderRepo
-	orderEventDB   *eventdb.EventDao
-	kafkaProducer  producer.Producer
+	userService      *service.UserService
+	productService   service.IProductService
+	orderService     service.IOrderService
+	cartRepo         *redis_repo.CartRepo
+	userOrderRepo    *db.UserOrderRepo
+	orderEventDB     *eventdb.EventDao
+	cartRepoProducer producer.Producer
+	orderProducer    producer.Producer
 }
 
 func newCartCommandHandler(
 	userService *service.UserService,
-	productService *service.ProductService,
+	productService service.IProductService,
+	orderService service.IOrderService,
 	cartRepo *redis_repo.CartRepo,
 	userOrderRepo *db.UserOrderRepo,
 	orderEventDB *eventdb.EventDao,
-	kafkaProducer producer.Producer,
+	cartRepoProducer producer.Producer,
+	orderProducer producer.Producer,
 ) *cartCommandHandler {
 	if cartRepo == nil {
 		panic("cartCommandHandler dependency cartRepo is nil")
@@ -59,23 +63,31 @@ func newCartCommandHandler(
 	if orderEventDB == nil {
 		panic("cartCommandHandler dependency orderEventDB is nil")
 	}
-	if kafkaProducer == nil {
-		panic("cartCommandHandler dependency kafkaProducer is nil")
+	if cartRepoProducer == nil {
+		panic("cartCommandHandler dependency cartRepoProducer is nil")
 	}
 	if userService == nil {
 		panic("cartCommandHandler dependency userService is nil")
 	}
-	if productService == nil {
+	if !util.HasImplementation(productService) {
 		panic("cartCommandHandler dependency productService is nil")
+	}
+	if !util.HasImplementation(orderService) {
+		panic("cartCommandHandler dependency orderService is nil")
+	}
+	if orderProducer == nil {
+		panic("cartCommandHandler dependency orderProducer is nil")
 	}
 
 	return &cartCommandHandler{
-		userService:    userService,
-		productService: productService,
-		cartRepo:       cartRepo,
-		userOrderRepo:  userOrderRepo,
-		orderEventDB:   orderEventDB,
-		kafkaProducer:  kafkaProducer,
+		userService:      userService,
+		productService:   productService,
+		orderService:     orderService,
+		cartRepo:         cartRepo,
+		userOrderRepo:    userOrderRepo,
+		orderEventDB:     orderEventDB,
+		cartRepoProducer: cartRepoProducer,
+		orderProducer:    orderProducer,
 	}
 }
 
@@ -150,7 +162,7 @@ func (h *cartCommandHandler) produceCartEvent(ctx context.Context, userID int, o
 		return
 	}
 
-	err = h.kafkaProducer.Produce(ctx, []message.Message{msg})
+	err = h.cartRepoProducer.Produce(ctx, []message.Message{msg})
 	if err != nil {
 		return
 	}
@@ -168,7 +180,7 @@ func (h *cartCommandHandler) produceCartFailedEvent(ctx context.Context, userID 
 		return
 	}
 
-	err = h.kafkaProducer.Produce(ctx, []message.Message{msg})
+	err = h.cartRepoProducer.Produce(ctx, []message.Message{msg})
 	if err != nil {
 		return
 	}
@@ -228,7 +240,7 @@ func (h *cartCommandHandler) produceCartUpdatedEvent(ctx context.Context, userID
 		return
 	}
 
-	err = h.kafkaProducer.Produce(ctx, []message.Message{msg})
+	err = h.cartRepoProducer.Produce(ctx, []message.Message{msg})
 	if err != nil {
 		return
 	}
@@ -263,7 +275,7 @@ func (h *cartCommandHandler) produceCartDeletedEvent(ctx context.Context, userID
 		return
 	}
 
-	err = h.kafkaProducer.Produce(ctx, []message.Message{msg})
+	err = h.cartRepoProducer.Produce(ctx, []message.Message{msg})
 	if err != nil {
 		return
 	}
@@ -296,7 +308,15 @@ func (h *cartCommandHandler) HandleCartConfirmed(ctx context.Context, cmd cmd_mo
 
 	orderID := util.GenerateOrderIDByUUID()
 	orderItems := util.CacheOrderToOrderItemData(cartCache)
-	amount := util.CalculateOrderAmount(orderItems)
+	orderItems, err = h.orderService.SetUpOrderItemDataFromRedis(ctx, orderItems...)
+	if err != nil {
+		return err
+	}
+
+	amount, err := h.orderService.CalculateOrderAmount(ctx, orderItems...)
+	if err != nil {
+		return err
+	}
 
 	orderCreatedEvent := evt_model.NewOrderCreatedEvent(orderID, user.UserID, orderID, time.Now().UTC(), orderItems, amount, uint(evt_model.OrderStateCreated))
 
@@ -319,24 +339,16 @@ func (h *cartCommandHandler) HandleCartConfirmed(ctx context.Context, cmd cmd_mo
 
 	//次要事件發布，有錯誤會記錄，交由後續程序處理
 	// go h.produceCartDeletedEvent(ctx, user.UserID)
-	// 目前order created event沒有實質處理內容
-	// go h.produceOrderCreatedEvent(ctx, user.UserID, orderCreatedEvent)
+	go h.produceOrderCreatedEvent(ctx, user.UserID, orderCreatedEvent)
 
 	return nil
 }
 
 func (h *cartCommandHandler) produceOrderCreatedEvent(ctx context.Context, userID int, evt *evt_model.OrderCreatedEvent) {
-	msg, err := prepareCartConfirmedEventMessage(userID, evt)
+	msg, err := prepareEventMessage(userID, evt_model.OrderCreatedEventName, evt)
 	if err != nil {
 		return
 	}
 
-	h.kafkaProducer.Produce(ctx, []message.Message{msg})
-}
-
-func prepareCartConfirmedEventMessage(userID int, evt *evt_model.OrderCreatedEvent) (message.Message, error) {
-	return prepareEventMessage(userID, evt_model.OrderCreatedEventName, evt)
-}
-func generateCartAggregateID(userID int) string {
-	return fmt.Sprintf("cart:%d", userID)
+	h.orderProducer.Produce(ctx, []message.Message{msg})
 }

@@ -28,13 +28,13 @@ func NewProductDBRepo(db *DbDao) *ProductDBRepo {
 	return &ProductDBRepo{db: db}
 }
 
-func (s *ProductDBRepo) CreateProduct(product *model.Product) error {
+func (s *ProductDBRepo) CreateProduct(ctx context.Context, product *model.Product) error {
 	return s.db.Create(product).Error
 }
 
 func (s *ProductDBRepo) GetProductByID(ctx context.Context, productID string) (*model.Product, error) {
 	var productFromDB model.Product
-	err := s.db.First(&productFromDB, productID).Error
+	err := s.db.Where("product_id = ?", productID).First(&productFromDB).Error
 	if err != nil {
 		return nil, err
 	}
@@ -43,7 +43,7 @@ func (s *ProductDBRepo) GetProductByID(ctx context.Context, productID string) (*
 
 func (s *ProductDBRepo) GetProductStock(ctx context.Context, productID string) (int, error) {
 	var productFromDB model.Product
-	err := s.db.First(&productFromDB, productID).Error
+	err := s.db.Where("product_id = ?", productID).First(&productFromDB).Error
 	if err != nil {
 		return 0, err
 	}
@@ -137,50 +137,50 @@ func (s *ProductDBRepo) GetProductsInStock(ctx context.Context) ([]model.Product
 
 // Update - 更新商品
 func (s *ProductDBRepo) UpdateProduct(ctx context.Context, product *model.Product) error {
-	return s.db.Save(product).Error
+	return s.db.Where("product_id = ?", product.ProductID).Updates(product).Error
 }
 
 // Update - 部分更新商品
 
 // Update - 更新reserved庫存
-func (s *ProductDBRepo) UpdateReserved(ctx context.Context, id string, reserved uint) error {
+func (s *ProductDBRepo) UpdateReserved(ctx context.Context, productID string, reserved uint) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		// 先鎖定記錄
 		var product model.Product
 		if err := tx.Set("gorm:for_update", true).
-			Where("product_id = ?", id).
+			Where("product_id = ?", productID).
 			First(&product).Error; err != nil {
 			return err
 		}
 
 		// 更新 reserved 值
 		return tx.Model(&model.Product{}).
-			Where("product_id = ?", id).
+			Where("product_id = ?", productID).
 			Update("reserved", reserved).Error
 	})
 }
 
 // Update - 更新庫存
-func (s *ProductDBRepo) UpdateStock(ctx context.Context, id string, stock uint) error {
+func (s *ProductDBRepo) UpdateStock(ctx context.Context, productID string, stock uint) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		// 先鎖定記錄
 		var product model.Product
 		if err := tx.Set("gorm:for_update", true).
-			Where("product_id = ?", id).
+			Where("product_id = ?", productID).
 			First(&product).Error; err != nil {
 			return err
 		}
 
 		// 更新 stock 值
 		return tx.Model(&model.Product{}).
-			Where("product_id = ?", id).
+			Where("product_id = ?", productID).
 			Update("stock", stock).Error
 	})
 }
 
 // Delete - 硬刪除商品
-func (s *ProductDBRepo) HardDeleteProduct(ctx context.Context, id string) error {
-	return s.db.Unscoped().Delete(&model.Product{}, id).Error
+func (s *ProductDBRepo) HardDeleteProduct(ctx context.Context, productID string) error {
+	return s.db.Unscoped().Where("product_id = ?", productID).Delete(&model.Product{}).Error
 }
 
 // 分頁查詢商品

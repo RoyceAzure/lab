@@ -50,7 +50,9 @@ type IOrderRepository interface {
 	GetOrdersByUserID(ctx context.Context, userID int) ([]model.Order, error)
 	GetAllOrders(ctx context.Context) ([]model.Order, error)
 	UpdateOrder(ctx context.Context, order *model.Order) error
-	DeleteOrder(ctx context.Context, id string) error
+	UpdateOrderState(ctx context.Context, id string, state uint) error
+	UpdateOrderAmount(ctx context.Context, id string, amount float64) error
+	HardDeleteOrder(ctx context.Context, id string) error
 }
 
 // IUserRepository User 相關操作介面
@@ -111,25 +113,15 @@ func (u *UnifiedDBImpl) Begin(ctx context.Context) *gorm.DB {
 
 // Product Repository 實現
 func (u *UnifiedDBImpl) CreateProduct(ctx context.Context, product *model.Product) error {
-	return u.db.WithContext(ctx).Create(product).Error
+	return u.ProductDBRepo.CreateProduct(ctx, product)
 }
 
 func (u *UnifiedDBImpl) GetProductByID(ctx context.Context, productID string) (*model.Product, error) {
-	var product model.Product
-	err := u.db.WithContext(ctx).First(&product, "id = ?", productID).Error
-	if err != nil {
-		return nil, err
-	}
-	return &product, nil
+	return u.ProductDBRepo.GetProductByID(ctx, productID)
 }
 
 func (u *UnifiedDBImpl) GetProductByCode(ctx context.Context, code string) (*model.Product, error) {
-	var product model.Product
-	err := u.db.WithContext(ctx).Where("code = ?", code).First(&product).Error
-	if err != nil {
-		return nil, err
-	}
-	return &product, nil
+	return u.ProductDBRepo.GetProductByCode(ctx, code)
 }
 
 func (u *UnifiedDBImpl) AddProductStock(ctx context.Context, productID string, quantity uint) (int, error) {
@@ -170,27 +162,35 @@ func (u *UnifiedDBImpl) GetProductsInStock(ctx context.Context) ([]model.Product
 
 // Order Repository 實現
 func (u *UnifiedDBImpl) CreateOrder(ctx context.Context, order *model.Order) error {
-	return u.OrderRepo.CreateOrder(order)
+	return u.OrderRepo.CreateOrder(ctx, order)
 }
 
 func (u *UnifiedDBImpl) GetOrderByID(ctx context.Context, id string) (*model.Order, error) {
-	return u.OrderRepo.GetOrderByID(id)
+	return u.OrderRepo.GetOrderByID(ctx, id)
 }
 
 func (u *UnifiedDBImpl) GetOrdersByUserID(ctx context.Context, userID int) ([]model.Order, error) {
-	return u.OrderRepo.GetOrdersByUserID(userID)
+	return u.OrderRepo.GetOrdersByUserID(ctx, userID)
 }
 
 func (u *UnifiedDBImpl) GetAllOrders(ctx context.Context) ([]model.Order, error) {
-	return u.OrderRepo.GetAllOrders()
+	return u.OrderRepo.GetAllOrders(ctx)
 }
 
 func (u *UnifiedDBImpl) UpdateOrder(ctx context.Context, order *model.Order) error {
-	return u.OrderRepo.UpdateOrder(order)
+	return u.OrderRepo.UpdateOrder(ctx, order)
 }
 
-func (u *UnifiedDBImpl) DeleteOrder(ctx context.Context, id string) error {
-	return u.OrderRepo.DeleteOrder(id)
+func (u *UnifiedDBImpl) UpdateOrderState(ctx context.Context, id string, state uint) error {
+	return u.OrderRepo.UpdateOrderState(ctx, id, state)
+}
+
+func (u *UnifiedDBImpl) UpdateOrderAmount(ctx context.Context, id string, amount float64) error {
+	return u.OrderRepo.UpdateOrderAmount(ctx, id, amount)
+}
+
+func (u *UnifiedDBImpl) HardDeleteOrder(ctx context.Context, id string) error {
+	return u.OrderRepo.HardDeleteOrder(ctx, id)
 }
 
 // User Repository 實現

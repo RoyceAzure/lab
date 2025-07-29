@@ -16,6 +16,13 @@ type IProductService interface {
 	//   - err: 其他錯誤
 	CreateProduct(ctx context.Context, product *model.Product) error
 
+	// GetProduct 取得商品
+	// 返回值:
+	//   - *model.Product: 商品
+	// 錯誤:
+	//   - err: 其他錯誤
+	GetProduct(ctx context.Context, productID string) (*model.Product, error)
+
 	// CheckProductStockEnough 檢查庫存是否足夠
 	// 返回值:
 	//   - bool: true 表示庫存足夠，false 表示庫存不足
@@ -66,6 +73,10 @@ func NewProductService(productRepo db.IProductRepository) *ProductService {
 
 func (s *ProductService) CreateProduct(ctx context.Context, product *model.Product) error {
 	return s.productRepo.CreateProduct(ctx, product)
+}
+
+func (s *ProductService) GetProduct(ctx context.Context, productID string) (*model.Product, error) {
+	return s.productRepo.GetProductByID(ctx, productID)
 }
 
 // 檢查庫存是否足夠

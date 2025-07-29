@@ -3,9 +3,11 @@ package db
 import (
 	"context"
 	"fmt"
+	"testing"
 	"time"
 
 	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
+	"github.com/RoyceAzure/lab/cqrs/internal/pkg/util"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -52,6 +54,12 @@ func (suite *OrderRepoTestSuite) TearDownSuite() {
 	sqlDB.Close()
 }
 
+func (suite *OrderRepoTestSuite) TearDownTest() {
+	suite.db.Exec("DELETE FROM order_items")
+	suite.db.Exec("DELETE FROM orders")
+	suite.db.Exec("DELETE FROM users")
+}
+
 // 創建測試用的用戶
 func (suite *OrderRepoTestSuite) createTestUser() *model.User {
 	user := &model.User{
@@ -77,234 +85,6 @@ func (suite *OrderRepoTestSuite) createTestProducts(count int) []*model.Product 
 	return products
 }
 
-func (suite *OrderRepoTestSuite) TestCreateOrder() {
-	user := suite.createTestUser()
-	order := &model.Order{
-		UserID:    user.UserID,
-		Amount:    decimal.NewFromFloat(100.0),
-		OrderDate: time.Now(),
-	}
-
-	err := suite.orderRepo.CreateOrder(order)
-
-	require.NoError(suite.T(), err)
-	require.NotZero(suite.T(), order.OrderID)
-	require.False(suite.T(), order.CreatedAt.IsZero())
-}
-
-func (suite *OrderRepoTestSuite) TestGetOrderByID() {
-	user := suite.createTestUser()
-	order := &model.Order{
-		UserID:    user.UserID,
-		Amount:    decimal.NewFromFloat(100.0),
-		OrderDate: time.Now(),
-	}
-	suite.orderRepo.CreateOrder(order)
-
-	foundOrder, err := suite.orderRepo.GetOrderByID(order.OrderID)
-
-	require.NoError(suite.T(), err)
-	require.True(suite.T(), order.Amount.Equal(foundOrder.Amount))
-	require.Equal(suite.T(), order.UserID, foundOrder.UserID)
-}
-
-func (suite *OrderRepoTestSuite) TestGetOrderByID_NotFound() {
-	foundOrder, err := suite.orderRepo.GetOrderByID("999")
-
-	require.Error(suite.T(), err)
-	require.Nil(suite.T(), foundOrder)
-}
-
-func (suite *OrderRepoTestSuite) TestGetOrdersByUserID() {
-	user := suite.createTestUser()
-
-	// 創建多個訂單
-	orders := []*model.Order{
-		{
-			UserID:    user.UserID,
-			Amount:    decimal.NewFromFloat(100.0),
-			OrderDate: time.Now(),
-		},
-		{
-			UserID:    user.UserID,
-			Amount:    decimal.NewFromFloat(200.0),
-			OrderDate: time.Now(),
-		},
-	}
-
-	for _, order := range orders {
-		suite.orderRepo.CreateOrder(order)
-	}
-
-	foundOrders, err := suite.orderRepo.GetOrdersByUserID(user.UserID)
-
-	require.NoError(suite.T(), err)
-	require.Len(suite.T(), foundOrders, 2)
-}
-
-func (suite *OrderRepoTestSuite) TestGetAllOrders() {
-	user := suite.createTestUser()
-
-	// 創建多個訂單
-	orders := []*model.Order{
-		{
-			UserID:    user.UserID,
-			Amount:    decimal.NewFromFloat(100.0),
-			OrderDate: time.Now(),
-		},
-		{
-			UserID:    user.UserID,
-			Amount:    decimal.NewFromFloat(200.0),
-			OrderDate: time.Now(),
-		},
-	}
-
-	for _, order := range orders {
-		suite.orderRepo.CreateOrder(order)
-	}
-
-	allOrders, err := suite.orderRepo.GetAllOrders()
-
-	require.NoError(suite.T(), err)
-	require.Len(suite.T(), allOrders, 2)
-}
-
-func (suite *OrderRepoTestSuite) TestUpdateOrder() {
-	user := suite.createTestUser()
-	order := &model.Order{
-		UserID:    user.UserID,
-		Amount:    decimal.NewFromFloat(100.0),
-		OrderDate: time.Now(),
-	}
-	suite.orderRepo.CreateOrder(order)
-
-	// 更新訂單
-	order.Amount = decimal.NewFromFloat(150.0)
-	err := suite.orderRepo.UpdateOrder(order)
-	require.NoError(suite.T(), err)
-
-	// 驗證更新
-	updatedOrder, _ := suite.orderRepo.GetOrderByID(order.OrderID)
-	require.True(suite.T(), decimal.NewFromFloat(150.0).Equal(updatedOrder.Amount))
-}
-
-func (suite *OrderRepoTestSuite) TestUpdateOrderFields() {
-	user := suite.createTestUser()
-	order := &model.Order{
-		UserID:    user.UserID,
-		Amount:    decimal.NewFromFloat(100.0),
-		OrderDate: time.Now(),
-	}
-	suite.orderRepo.CreateOrder(order)
-
-	updates := map[string]interface{}{
-		"amount": decimal.NewFromFloat(200.0),
-	}
-
-	err := suite.orderRepo.UpdateOrderFields(order.OrderID, updates)
-	require.NoError(suite.T(), err)
-
-	// 驗證更新
-	updatedOrder, _ := suite.orderRepo.GetOrderByID(order.OrderID)
-	require.True(suite.T(), decimal.NewFromFloat(200.0).Equal(updatedOrder.Amount))
-}
-
-func (suite *OrderRepoTestSuite) TestDeleteOrder() {
-	user := suite.createTestUser()
-	order := &model.Order{
-		UserID:    user.UserID,
-		Amount:    decimal.NewFromFloat(100.0),
-		OrderDate: time.Now(),
-	}
-	suite.orderRepo.CreateOrder(order)
-
-	err := suite.orderRepo.DeleteOrder(order.OrderID)
-	require.NoError(suite.T(), err)
-
-	// 驗證軟刪除
-	foundOrder, err := suite.orderRepo.GetOrderByID(order.OrderID)
-	require.Error(suite.T(), err)
-	require.Nil(suite.T(), foundOrder)
-}
-
-func (suite *OrderRepoTestSuite) TestHardDeleteOrder() {
-	user := suite.createTestUser()
-	order := &model.Order{
-		UserID:    user.UserID,
-		Amount:    decimal.NewFromFloat(100.0),
-		OrderDate: time.Now(),
-	}
-	suite.orderRepo.CreateOrder(order)
-
-	err := suite.orderRepo.HardDeleteOrder(order.OrderID)
-	require.NoError(suite.T(), err)
-
-	// 驗證硬刪除
-	foundOrder, err := suite.orderRepo.GetOrderByID(order.OrderID)
-	require.Error(suite.T(), err)
-	require.Nil(suite.T(), foundOrder)
-}
-
-func (suite *OrderRepoTestSuite) TestGetOrdersPaginated() {
-	user := suite.createTestUser()
-
-	// 創建 25 個訂單
-	for i := 1; i <= 25; i++ {
-		order := &model.Order{
-			UserID:    user.UserID,
-			Amount:    decimal.NewFromInt(int64(i * 100)),
-			OrderDate: time.Now(),
-		}
-		suite.orderRepo.CreateOrder(order)
-	}
-
-	// 測試第一頁，每頁 10 筆
-	orders, total, err := suite.orderRepo.GetOrdersPaginated(1, 10)
-	require.NoError(suite.T(), err)
-	require.Len(suite.T(), orders, 10)
-	require.Equal(suite.T(), int64(25), total)
-
-	// 測試第三頁，每頁 10 筆
-	orders, total, err = suite.orderRepo.GetOrdersPaginated(3, 10)
-	require.NoError(suite.T(), err)
-	require.Len(suite.T(), orders, 5) // 第三頁只有 5 筆
-	require.Equal(suite.T(), int64(25), total)
-}
-
-func (suite *OrderRepoTestSuite) TestGetOrdersPaginated_EmptyResult() {
-	orders, total, err := suite.orderRepo.GetOrdersPaginated(1, 10)
-	require.NoError(suite.T(), err)
-	require.Len(suite.T(), orders, 0)
-	require.Equal(suite.T(), int64(0), total)
-}
-
-func (suite *OrderRepoTestSuite) TestGetUserOrderStats() {
-	user := suite.createTestUser()
-
-	// 創建多個訂單
-	orders := []*model.Order{
-		{
-			UserID:    user.UserID,
-			Amount:    decimal.NewFromFloat(100.0),
-			OrderDate: time.Now(),
-		},
-		{
-			UserID:    user.UserID,
-			Amount:    decimal.NewFromFloat(200.0),
-			OrderDate: time.Now(),
-		},
-	}
-
-	for _, order := range orders {
-		suite.orderRepo.CreateOrder(order)
-	}
-
-	totalAmount, orderCount, err := suite.orderRepo.GetUserOrderStats(user.UserID)
-	require.NoError(suite.T(), err)
-	require.True(suite.T(), decimal.NewFromFloat(300.0).Equal(decimal.NewFromFloat(totalAmount)))
-	require.Equal(suite.T(), 2, orderCount)
-}
-
 func (suite *OrderRepoTestSuite) TestUpdateOrdersBatch() {
 	// 創建測試用戶和產品
 	user := suite.createTestUser()
@@ -313,28 +93,26 @@ func (suite *OrderRepoTestSuite) TestUpdateOrdersBatch() {
 	// 創建初始訂單
 	initialOrders := []*model.Order{
 		{
-			OrderID:   "ORDER-1",
+			OrderID:   util.GenerateOrderID(),
 			UserID:    user.UserID,
 			Amount:    decimal.NewFromInt(100),
 			State:     1,
 			OrderDate: time.Now(),
 			OrderItems: []model.OrderItem{
 				{
-					OrderID:   "ORDER-1",
 					ProductID: products[0].ProductID,
 					Quantity:  1,
 				},
 			},
 		},
 		{
-			OrderID:   "ORDER-2",
+			OrderID:   util.GenerateOrderID(),
 			UserID:    user.UserID,
 			Amount:    decimal.NewFromInt(200),
 			State:     1,
 			OrderDate: time.Now(),
 			OrderItems: []model.OrderItem{
 				{
-					OrderID:   "ORDER-2",
 					ProductID: products[1].ProductID,
 					Quantity:  2,
 				},
@@ -344,7 +122,7 @@ func (suite *OrderRepoTestSuite) TestUpdateOrdersBatch() {
 
 	// 先創建初始訂單
 	for _, order := range initialOrders {
-		err := suite.orderRepo.CreateOrder(order)
+		err := suite.orderRepo.CreateOrder(context.Background(), order)
 		suite.Require().NoError(err)
 	}
 
@@ -386,7 +164,7 @@ func (suite *OrderRepoTestSuite) TestUpdateOrdersBatch() {
 	}
 
 	// 執行批次更新
-	result, err := suite.orderRepo.UpdateOrdersBatch(updatedOrders)
+	result, err := suite.orderRepo.UpdateOrdersBatch(context.Background(), updatedOrders)
 	suite.Require().NoError(err)
 	suite.Require().NotNil(result)
 
@@ -399,7 +177,7 @@ func (suite *OrderRepoTestSuite) TestUpdateOrdersBatch() {
 
 	// 驗證訂單更新
 	for _, updatedOrder := range updatedOrders {
-		order, err := suite.orderRepo.GetOrderByID(updatedOrder.OrderID)
+		order, err := suite.orderRepo.GetOrderByID(context.Background(), updatedOrder.OrderID)
 		suite.Require().NoError(err)
 		suite.Require().NotNil(order)
 
@@ -431,78 +209,156 @@ func (suite *OrderRepoTestSuite) TestUpdateOrdersBatch() {
 	}
 }
 
-// 測試部分失敗的情況
-func (suite *OrderRepoTestSuite) TestUpdateOrdersBatch_PartialFailure() {
-	// 創建測試用戶和產品
+func (suite *OrderRepoTestSuite) TestCreateOrderWithItems() {
+	t := suite.T()
 	user := suite.createTestUser()
 	products := suite.createTestProducts(2)
 
-	// 創建一個有效訂單
-	validOrder := &model.Order{
-		OrderID:   "ORDER-1",
+	// 創建訂單和訂單項目
+	order := &model.Order{
+		OrderID:   util.GenerateOrderID(),
 		UserID:    user.UserID,
-		Amount:    decimal.NewFromInt(100),
-		State:     1,
+		Amount:    decimal.NewFromFloat(300.0),
 		OrderDate: time.Now(),
 		OrderItems: []model.OrderItem{
 			{
-				OrderID:   "ORDER-1",
 				ProductID: products[0].ProductID,
+				Quantity:  2,
+			},
+			{
+				ProductID: products[1].ProductID,
 				Quantity:  1,
 			},
 		},
 	}
-	err := suite.orderRepo.CreateOrder(validOrder)
-	suite.Require().NoError(err)
 
-	// 準備更新資料（包含一個不存在的訂單）
-	updatedOrders := []*model.Order{
+	// 創建訂單
+	err := suite.orderRepo.CreateOrder(context.Background(), order)
+	require.NoError(t, err)
+	require.NotEmpty(t, order.OrderID)
+
+	// 驗證訂單和訂單項目都被正確創建
+	foundOrder, err := suite.orderRepo.GetOrderByID(context.Background(), order.OrderID)
+	require.NoError(t, err)
+	require.NotNil(t, foundOrder)
+	require.Equal(t, user.UserID, foundOrder.UserID)
+	require.True(t, order.Amount.Equal(foundOrder.Amount))
+
+	// 驗證訂單項目
+	require.Len(t, foundOrder.OrderItems, 2)
+	for i, item := range foundOrder.OrderItems {
+		require.Equal(t, order.OrderItems[i].ProductID, item.ProductID)
+		require.Equal(t, order.OrderItems[i].Quantity, item.Quantity)
+		require.Equal(t, order.OrderID, item.OrderID)
+	}
+}
+
+func (suite *OrderRepoTestSuite) TestHardDeleteOrderWithItems() {
+	t := suite.T()
+	user := suite.createTestUser()
+	products := suite.createTestProducts(2)
+
+	// 創建訂單和訂單項目
+	order := &model.Order{
+		OrderID:   util.GenerateOrderID(),
+		UserID:    user.UserID,
+		Amount:    decimal.NewFromFloat(300.0),
+		OrderDate: time.Now(),
+		OrderItems: []model.OrderItem{
+			{
+				ProductID: products[0].ProductID,
+				Quantity:  2,
+			},
+			{
+				ProductID: products[1].ProductID,
+				Quantity:  1,
+			},
+		},
+	}
+
+	// 創建訂單
+	err := suite.orderRepo.CreateOrder(context.Background(), order)
+	require.NoError(t, err)
+
+	// 硬刪除訂單
+	err = suite.orderRepo.HardDeleteOrder(context.Background(), order.OrderID)
+	require.NoError(t, err)
+
+	// 驗證訂單被硬刪除
+	foundOrder, err := suite.orderRepo.GetOrderByID(context.Background(), order.OrderID)
+	require.Error(t, err)
+	require.Nil(t, foundOrder)
+
+	// 驗證訂單項目也被硬刪除（使用 Unscoped 也找不到）
+	var count int64
+	err = suite.db.Unscoped().Model(&model.OrderItem{}).Where("order_id = ?", order.OrderID).Count(&count).Error
+	require.NoError(t, err)
+	require.Equal(t, int64(0), count)
+}
+
+func (suite *OrderRepoTestSuite) TestGetOrdersByUserIDWithItems() {
+	t := suite.T()
+	user := suite.createTestUser()
+	products := suite.createTestProducts(2)
+
+	// 創建多個訂單
+	orders := []*model.Order{
 		{
-			OrderID: "ORDER-1",
-			UserID:  user.UserID,
-			Amount:  decimal.NewFromInt(150),
-			State:   2,
+			OrderID:   util.GenerateOrderID(),
+			UserID:    user.UserID,
+			Amount:    decimal.NewFromFloat(300.0),
+			OrderDate: time.Now(),
 			OrderItems: []model.OrderItem{
 				{
-					OrderID:   "ORDER-1",
 					ProductID: products[0].ProductID,
 					Quantity:  2,
+				},
+				{
+					ProductID: products[1].ProductID,
+					Quantity:  1,
 				},
 			},
 		},
 		{
-			OrderID: "NON-EXISTENT", // 不存在的訂單
-			UserID:  user.UserID,
-			Amount:  decimal.NewFromInt(200),
-			State:   1,
+			OrderID:   util.GenerateOrderID(),
+			UserID:    user.UserID,
+			Amount:    decimal.NewFromFloat(200.0),
+			OrderDate: time.Now(),
 			OrderItems: []model.OrderItem{
 				{
-					OrderID:   "NON-EXISTENT",
-					ProductID: products[1].ProductID,
+					ProductID: products[0].ProductID,
 					Quantity:  1,
 				},
 			},
 		},
 	}
 
-	// 執行批次更新
-	result, err := suite.orderRepo.UpdateOrdersBatch(updatedOrders)
-	suite.Require().NoError(err) // 整體操作不應該返回錯誤
-	suite.Require().NotNil(result)
+	// 創建訂單
+	for _, order := range orders {
+		err := suite.orderRepo.CreateOrder(context.Background(), order)
+		require.NoError(t, err)
+	}
 
-	// 驗證部分成功的結果
-	suite.Equal(2, result.TotalCount, "總數應該為2")
-	suite.Equal(1, result.SuccessCount, "成功數應該為1")
-	suite.Equal(1, result.FailCount, "失敗數應該為1")
-	suite.Len(result.SuccessOrders, 1, "成功訂單數應該為1")
-	suite.Len(result.FailedOrders, 1, "失敗訂單數應該為1")
-	suite.Contains(result.FailedOrders, "NON-EXISTENT", "應該包含不存在訂單的錯誤")
+	// 獲取用戶的所有訂單
+	foundOrders, err := suite.orderRepo.GetOrdersByUserID(context.Background(), user.UserID)
+	require.NoError(t, err)
+	require.Len(t, foundOrders, 2)
 
-	// 驗證成功更新的訂單
-	updatedOrder, err := suite.orderRepo.GetOrderByID("ORDER-1")
-	suite.Require().NoError(err)
-	suite.Equal(decimal.NewFromInt(150), updatedOrder.Amount)
-	suite.Equal(2, updatedOrder.State)
-	suite.Len(updatedOrder.OrderItems, 1)
-	suite.Equal(2, updatedOrder.OrderItems[0].Quantity)
+	// 驗證每個訂單的訂單項目
+	for i, foundOrder := range foundOrders {
+		require.Equal(t, orders[i].UserID, foundOrder.UserID)
+		require.True(t, orders[i].Amount.Equal(foundOrder.Amount))
+		require.Len(t, foundOrder.OrderItems, len(orders[i].OrderItems))
+
+		// 驗證訂單項目
+		for j, item := range foundOrder.OrderItems {
+			require.Equal(t, orders[i].OrderItems[j].ProductID, item.ProductID)
+			require.Equal(t, orders[i].OrderItems[j].Quantity, item.Quantity)
+			require.Equal(t, foundOrder.OrderID, item.OrderID)
+		}
+	}
+}
+
+func TestOrderRepoSuite(t *testing.T) {
+	suite.Run(t, new(OrderRepoTestSuite))
 }

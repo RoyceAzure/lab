@@ -13,6 +13,7 @@ import (
 	cmd_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/command"
 	command_handler "github.com/RoyceAzure/lab/cqrs/internal/handler/command"
 	event_handler "github.com/RoyceAzure/lab/cqrs/internal/handler/event"
+	handler "github.com/RoyceAzure/lab/cqrs/internal/handler/event"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/consumer"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/producer"
 	"github.com/RoyceAzure/lab/cqrs/internal/infra/producer/balancer"
@@ -128,6 +129,20 @@ func setupTestEnvironment(t *testing.T) func() {
 	})
 	assert.NoError(t, err)
 
+	// 創建 product command topic，設定較短的retention時間以便自動清理
+	err = adminClient.CreateTopic(context.Background(), admin.TopicConfig{
+		Name:              OrderEventTopicName,
+		Partitions:        kafkaConfigTemplate.Partition,
+		ReplicationFactor: 3,
+		Configs: map[string]interface{}{
+			"cleanup.policy":      "delete",
+			"retention.ms":        "60000", // 1分鐘後自動刪除
+			"min.insync.replicas": "2",
+			"delete.retention.ms": "1000", // 標記刪除後1秒鐘清理
+		},
+	})
+	assert.NoError(t, err)
+
 	// 等待 topic 創建完成
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -177,10 +192,12 @@ type ProducerTestSuite struct {
 	cartCommandProducer   *producer.CartCommandProducer //for測試使用者發送命令
 	cartCommandConsumers  []consumer.IBaseConsumer
 	cartEventConsumers    []consumer.IBaseConsumer
+	orderEventConsumers   []consumer.IBaseConsumer
 	productConsumer       []*consumer.ProductConsumer //for WiteBackProductRepo 更新db product 資料
 	productRepoProducer   *producer.ProductProducer   //for WiteBackProductRepo 發送product 修改指令
 	toCartCommandProducer kafka_producer.Producer     //for測試使用者發送命令
 	toCartEventProducer   kafka_producer.Producer     //for cart command handler
+	orderDbProducer       kafka_producer.Producer     //for order db handler
 	orderEventDBQueryDao  *eventdb.EventDBQueryDao
 
 	redisClient *redis.Client
@@ -230,7 +247,7 @@ func (suite *ProducerTestSuite) SetupSuite() {
 	suite.setupOrderEventDBQueryDao()
 
 	suite.unifiedDB = db.NewUnifiedDB(conn)
-
+	suite.setupOrderService()
 	suite.userRepo = db.NewUserRepo(suite.dbDao)
 	suite.productRedisRepo = redis_repo.NewProductRepo(suite.redisClient)
 	suite.setupProductConsumer()
@@ -243,13 +260,19 @@ func (suite *ProducerTestSuite) SetupSuite() {
 	suite.setupToCartCommandProducer()
 	suite.setupCartCommandProducer()
 	suite.setupCartEventConsumer()
+	suite.setupOrderDbProducer()
+
 	suite.setupCartCommandConsumer()
+	suite.setupOrderEventHandler()
+	suite.setupOrderEventConsumer()
 
 	suite.T().Log("=== SetupSuite: 測試套件設置完成 ===")
 }
 
 func (suite *ProducerTestSuite) SetupTest() {
 	suite.T().Log("=== SetupTest: 開始設置單個測試 ===")
+
+	TestManualCleanup(suite.T())
 
 	ctx := context.Background()
 
@@ -361,12 +384,24 @@ func (suite *ProducerTestSuite) TearDownSuite() {
 	suite.T().Log("=== TearDownSuite: 測試套件清理完成 ===")
 }
 
+func (suite *ProducerTestSuite) setupOrderService() {
+	suite.orderService = service.NewOrderService(suite.unifiedDB, suite.unifiedDB)
+}
+
 func (suite *ProducerTestSuite) setupProductRepoProducer() {
 	configTemplate := kafkaConfigTemplate
 	configTemplate.Topic = ProductCmdTopicName
 	p, err := kafka_producer.New(&configTemplate)
 	require.NoError(suite.T(), err)
 	suite.productRepoProducer = producer.NewProductProducer(p)
+}
+
+func (suite *ProducerTestSuite) setupOrderDbProducer() {
+	configTemplate := kafkaConfigTemplate
+	configTemplate.Topic = OrderEventTopicName
+	p, err := kafka_producer.New(&configTemplate)
+	require.NoError(suite.T(), err)
+	suite.orderDbProducer = p
 }
 
 // for user
@@ -377,6 +412,8 @@ func (suite *ProducerTestSuite) setupToCartCommandProducer() {
 	require.NoError(suite.T(), err)
 	suite.toCartCommandProducer = p
 }
+
+// for order db handler
 
 // for cart command handler
 func (suite *ProducerTestSuite) setupToForCartEventProducer() {
@@ -430,11 +467,17 @@ func (suite *ProducerTestSuite) setupCartCommandHandler() {
 	suite.cartCommandHandler = command_handler.NewCartCommandHandler(
 		suite.userService,
 		suite.productService,
+		suite.orderService,
 		suite.cartRepo,
 		suite.userOrderRepo,
 		suite.orderEventDB,
 		suite.toCartEventProducer,
+		suite.orderDbProducer,
 	)
+}
+
+func (suite *ProducerTestSuite) setupOrderEventHandler() {
+	suite.orderEventHandler = handler.NewOrderEventHandler(suite.unifiedDB)
 }
 
 // 設置cart command handler
@@ -499,6 +542,27 @@ func (suite *ProducerTestSuite) setupCartEventConsumer() {
 		cartEventConsumer := consumer.NewCartEventConsumer(cos, suite.cartEventHandler)
 		cartEventConsumer.Start(context.Background())
 		suite.cartEventConsumers = append(suite.cartEventConsumers, cartEventConsumer)
+	}
+}
+
+func (suite *ProducerTestSuite) setupOrderEventConsumer() {
+	if suite.orderEventHandler == nil {
+		suite.setupOrderEventHandler()
+	}
+	if suite.orderEventHandler == nil {
+		suite.T().Fatalf("orderEventHandler is not initialized")
+	}
+
+	configTemplate := kafkaConfigTemplate
+	configTemplate.ConsumerGroup = OrderEventConsumerGroup
+	configTemplate.Topic = OrderEventTopicName
+	partitions := configTemplate.Partition
+	for i := 0; i < partitions; i++ {
+		cos, err := kafka_consumer.New(&configTemplate)
+		require.NoError(suite.T(), err)
+		orderEventConsumer := consumer.NewOrderEventConsumer(cos, suite.orderEventHandler)
+		orderEventConsumer.Start(context.Background())
+		suite.orderEventConsumers = append(suite.orderEventConsumers, orderEventConsumer)
 	}
 }
 

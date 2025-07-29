@@ -69,8 +69,8 @@ func NewOrderHandler(orderHandler *OrderCommandHandler) Handler {
 	}
 }
 
-func NewCartCommandHandler(userService *service.UserService, productService *service.ProductService, cartRepo *redis_repo.CartRepo, userOrderRepo *db.UserOrderRepo, eventDB *eventdb.EventDao, kafkaProducer producer.Producer) Handler {
-	cartHandler := newCartCommandHandler(userService, productService, cartRepo, userOrderRepo, eventDB, kafkaProducer)
+func NewCartCommandHandler(userService *service.UserService, productService service.IProductService, orderService service.IOrderService, cartRepo *redis_repo.CartRepo, userOrderRepo *db.UserOrderRepo, eventDB *eventdb.EventDao, kafkaProducer producer.Producer, orderProducer producer.Producer) Handler {
+	cartHandler := newCartCommandHandler(userService, productService, orderService, cartRepo, userOrderRepo, eventDB, kafkaProducer, orderProducer)
 	return &HandlerDispatcher{
 		handlers: map[cmd_model.CommandType]Handler{
 			cmd_model.CartCreatedCommandName:   HandlerFunc(cartHandler.HandleCartCreated),

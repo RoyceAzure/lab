@@ -105,7 +105,7 @@ func (s *EventDBSyncServiceTestSuite) SetupTest() {
 func (s *EventDBSyncServiceTestSuite) TearDownTest() {
 	// 清理測試期間創建的訂單
 	for _, orderID := range s.createdOrderIDs {
-		err := s.orderRepo.HardDeleteOrder(orderID)
+		err := s.orderRepo.HardDeleteOrder(s.ctx, orderID)
 		if err != nil {
 			s.T().Logf("清理訂單 %s 時發生錯誤: %v", orderID, err)
 		}
@@ -161,7 +161,7 @@ func (s *EventDBSyncServiceTestSuite) TestOrderCreateEventSync() {
 	time.Sleep(10 * time.Second)
 
 	// 從資料庫查詢訂單
-	order, err := s.orderRepo.GetOrderByID(orderID)
+	order, err := s.orderRepo.GetOrderByID(s.ctx, orderID)
 	s.Require().NoError(err, "查詢訂單失敗")
 	s.Require().NotNil(order, "訂單不應為空")
 
@@ -264,7 +264,7 @@ func (s *EventDBSyncServiceTestSuite) TestConcurrentOrderEvents() {
 		record := value.(lastEventRecord)
 
 		// 從 PostgreSQL 資料庫查詢訂單
-		order, err := s.orderRepo.GetOrderByID(orderID)
+		order, err := s.orderRepo.GetOrderByID(s.ctx, orderID)
 		s.Require().NoError(err, "查詢訂單失敗")
 		s.Require().NotNil(order, "訂單不應為空")
 

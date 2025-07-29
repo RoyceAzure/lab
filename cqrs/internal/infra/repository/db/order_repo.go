@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
@@ -18,14 +19,14 @@ func NewOrderRepo(db *DbDao) *OrderRepo {
 }
 
 // Create - 創建訂單 db
-func (s *OrderRepo) CreateOrder(order *model.Order) error {
+func (s *OrderRepo) CreateOrder(ctx context.Context, order *model.Order) error {
 	return s.db.Create(order).Error
 }
 
 // Read - 根據ID查詢訂單
-func (s *OrderRepo) GetOrderByID(id string) (*model.Order, error) {
+func (s *OrderRepo) GetOrderByID(ctx context.Context, id string) (*model.Order, error) {
 	var order model.Order
-	err := s.db.Preload("OrderItems").First(&order, id).Error
+	err := s.db.Preload("OrderItems").First(&order, "order_id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -33,21 +34,21 @@ func (s *OrderRepo) GetOrderByID(id string) (*model.Order, error) {
 }
 
 // Read - 根據用戶ID查詢訂單
-func (s *OrderRepo) GetOrdersByUserID(userID int) ([]model.Order, error) {
+func (s *OrderRepo) GetOrdersByUserID(ctx context.Context, userID int) ([]model.Order, error) {
 	var orders []model.Order
 	err := s.db.Preload("OrderItems").Where("user_id = ?", userID).Find(&orders).Error
 	return orders, err
 }
 
 // Read - 查詢所有訂單
-func (s *OrderRepo) GetAllOrders() ([]model.Order, error) {
+func (s *OrderRepo) GetAllOrders(ctx context.Context) ([]model.Order, error) {
 	var orders []model.Order
 	err := s.db.Preload("OrderItems").Find(&orders).Error
 	return orders, err
 }
 
 // Read - 根據日期範圍查詢訂單
-func (s *OrderRepo) GetOrdersByDateRange(startDate, endDate model.Order) ([]model.Order, error) {
+func (s *OrderRepo) GetOrdersByDateRange(ctx context.Context, startDate, endDate model.Order) ([]model.Order, error) {
 	var orders []model.Order
 	err := s.db.Preload("OrderItems").
 		Where("order_date BETWEEN ? AND ?", startDate, endDate).
@@ -56,7 +57,7 @@ func (s *OrderRepo) GetOrdersByDateRange(startDate, endDate model.Order) ([]mode
 }
 
 // Read - 根據金額範圍查詢訂單
-func (s *OrderRepo) GetOrdersByAmountRange(minAmount, maxAmount float64) ([]model.Order, error) {
+func (s *OrderRepo) GetOrdersByAmountRange(ctx context.Context, minAmount, maxAmount float64) ([]model.Order, error) {
 	var orders []model.Order
 	err := s.db.Preload("OrderItems").
 		Where("amount BETWEEN ? AND ?", minAmount, maxAmount).
@@ -65,32 +66,32 @@ func (s *OrderRepo) GetOrdersByAmountRange(minAmount, maxAmount float64) ([]mode
 }
 
 // Update - 更新訂單
-func (s *OrderRepo) UpdateOrder(order *model.Order) error {
+func (s *OrderRepo) UpdateOrder(ctx context.Context, order *model.Order) error {
 	return s.db.Save(order).Error
 }
 
-// Update - 部分更新訂單
-func (s *OrderRepo) UpdateOrderFields(id string, updates map[string]interface{}) error {
-	return s.db.Model(&model.Order{}).Where("order_id = ?", id).Updates(updates).Error
+// Update - 更新訂單狀態
+func (s *OrderRepo) UpdateOrderState(ctx context.Context, id string, state uint) error {
+	return s.db.Model(&model.Order{}).Where("order_id = ?", id).Update("state", state).Error
 }
 
 // Update - 更新訂單金額
-func (s *OrderRepo) UpdateOrderAmount(id string, amount float64) error {
+func (s *OrderRepo) UpdateOrderAmount(ctx context.Context, id string, amount float64) error {
 	return s.db.Model(&model.Order{}).Where("order_id = ?", id).Update("amount", amount).Error
 }
 
 // Delete - 軟刪除訂單
-func (s *OrderRepo) DeleteOrder(id string) error {
-	return s.db.Delete(&model.Order{}, id).Error
+func (s *OrderRepo) DeleteOrder(ctx context.Context, id string) error {
+	return s.db.Where("order_id = ?", id).Delete(&model.Order{}).Error
 }
 
 // Delete - 硬刪除訂單
-func (s *OrderRepo) HardDeleteOrder(id string) error {
-	return s.db.Unscoped().Delete(&model.Order{}, id).Error
+func (s *OrderRepo) HardDeleteOrder(ctx context.Context, id string) error {
+	return s.db.Unscoped().Where("order_id = ?", id).Delete(&model.Order{}).Error
 }
 
 // 分頁查詢訂單
-func (s *OrderRepo) GetOrdersPaginated(page, pageSize int) ([]model.Order, int64, error) {
+func (s *OrderRepo) GetOrdersPaginated(ctx context.Context, page, pageSize int) ([]model.Order, int64, error) {
 	var orders []model.Order
 	var total int64
 
@@ -106,7 +107,7 @@ func (s *OrderRepo) GetOrdersPaginated(page, pageSize int) ([]model.Order, int64
 }
 
 // 根據條件分頁查詢
-func (s *OrderRepo) GetOrdersPaginatedWithCondition(page, pageSize int, condition map[string]interface{}) ([]model.Order, int64, error) {
+func (s *OrderRepo) GetOrdersPaginatedWithCondition(ctx context.Context, page, pageSize int, condition map[string]interface{}) ([]model.Order, int64, error) {
 	var orders []model.Order
 	var total int64
 
@@ -128,7 +129,7 @@ func (s *OrderRepo) GetOrdersPaginatedWithCondition(page, pageSize int, conditio
 }
 
 // 批量創建訂單
-func (s *OrderRepo) CreateOrdersBatch(orders []model.Order) error {
+func (s *OrderRepo) CreateOrdersBatch(ctx context.Context, orders []model.Order) error {
 	return s.db.Create(&orders).Error
 }
 
@@ -147,7 +148,7 @@ func (s *OrderRepo) GetUserOrderStats(userID int) (float64, int, error) {
 }
 
 // 取得熱門商品（根據訂單項目統計）
-func (s *OrderRepo) GetTopSellingProducts(limit int) ([]model.Product, error) {
+func (s *OrderRepo) GetTopSellingProducts(ctx context.Context, limit int) ([]model.Product, error) {
 	var products []model.Product
 	err := s.db.Model(&model.Product{}).
 		Joins("JOIN order_items ON products.product_id = order_items.product_id").
@@ -159,26 +160,26 @@ func (s *OrderRepo) GetTopSellingProducts(limit int) ([]model.Product, error) {
 }
 
 // 取得訂單項目
-func (s *OrderRepo) GetOrderItems(orderID uint) ([]model.OrderItem, error) {
+func (s *OrderRepo) GetOrderItems(ctx context.Context, orderID uint) ([]model.OrderItem, error) {
 	var items []model.OrderItem
 	err := s.db.Where("order_id = ?", orderID).Find(&items).Error
 	return items, err
 }
 
 // 新增訂單項目
-func (s *OrderRepo) AddOrderItem(item *model.OrderItem) error {
+func (s *OrderRepo) AddOrderItem(ctx context.Context, item *model.OrderItem) error {
 	return s.db.Create(item).Error
 }
 
 // 更新訂單項目數量
-func (s *OrderRepo) UpdateOrderItemQuantity(orderID, productID uint, quantity int) error {
+func (s *OrderRepo) UpdateOrderItemQuantity(ctx context.Context, orderID, productID uint, quantity int) error {
 	return s.db.Model(&model.OrderItem{}).
 		Where("order_id = ? AND product_id = ?", orderID, productID).
 		Update("quantity", quantity).Error
 }
 
 // 刪除訂單項目
-func (s *OrderRepo) DeleteOrderItem(orderID, productID uint) error {
+func (s *OrderRepo) DeleteOrderItem(ctx context.Context, orderID, productID uint) error {
 	return s.db.Where("order_id = ? AND product_id = ?", orderID, productID).
 		Delete(&model.OrderItem{}).Error
 }
@@ -193,7 +194,7 @@ type BatchUpdateResult struct {
 }
 
 // 批量更新訂單
-func (s *OrderRepo) UpdateOrdersBatch(orders []*model.Order) (*BatchUpdateResult, error) {
+func (s *OrderRepo) UpdateOrdersBatch(ctx context.Context, orders []*model.Order) (*BatchUpdateResult, error) {
 	if len(orders) == 0 {
 		return &BatchUpdateResult{
 			SuccessOrders: make([]string, 0),

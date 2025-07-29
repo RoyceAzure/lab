@@ -5,16 +5,17 @@ import (
 	"fmt"
 
 	evt_model "github.com/RoyceAzure/lab/cqrs/internal/domain/model/event"
-	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/eventdb"
+	"github.com/RoyceAzure/lab/cqrs/internal/infra/repository/db"
+	"github.com/RoyceAzure/lab/cqrs/internal/pkg/util"
 )
 
 // 處理order事件
 type OrderEventHandler struct {
-	orderEventDB *eventdb.EventDao
+	orderRepo db.IOrderRepository
 }
 
-func newOrderEventHandler(orderEventDB *eventdb.EventDao) *OrderEventHandler {
-	return &OrderEventHandler{orderEventDB: orderEventDB}
+func newOrderEventHandler(orderRepo db.IOrderRepository) *OrderEventHandler {
+	return &OrderEventHandler{orderRepo: orderRepo}
 }
 
 func (h *OrderEventHandler) HandleOrderCreated(ctx context.Context, evt evt_model.Event) error {
@@ -24,7 +25,12 @@ func (h *OrderEventHandler) HandleOrderCreated(ctx context.Context, evt evt_mode
 		return errUnknownEventFormat
 	}
 
-	fmt.Println("HandleOrderCreated", e)
+	order := util.OrderCreatedEventToOrder(e)
+	err := h.orderRepo.CreateOrder(ctx, order)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -33,6 +39,10 @@ func (h *OrderEventHandler) HandleOrderConfirmed(ctx context.Context, evt evt_mo
 	var ok bool
 	if e, ok = evt.(*evt_model.OrderConfirmedEvent); !ok {
 		return errUnknownEventFormat
+	}
+	err := h.orderRepo.UpdateOrderState(ctx, e.AggregateID, uint(e.ToState))
+	if err != nil {
+		return err
 	}
 
 	fmt.Println("HandleOrderConfirmed", e)
@@ -59,6 +69,11 @@ func (h *OrderEventHandler) HandleOrderCancelled(ctx context.Context, evt evt_mo
 		return errUnknownEventFormat
 	}
 
+	err := h.orderRepo.UpdateOrderState(ctx, e.AggregateID, uint(e.ToState))
+	if err != nil {
+		return err
+	}
+
 	fmt.Println("HandleOrderCancelled", e)
 	return nil
 }
@@ -69,6 +84,11 @@ func (h *OrderEventHandler) HandleOrderRefunded(ctx context.Context, evt evt_mod
 	var ok bool
 	if e, ok = evt.(*evt_model.OrderRefundedEvent); !ok {
 		return errUnknownEventFormat
+	}
+
+	err := h.orderRepo.UpdateOrderState(ctx, e.AggregateID, uint(e.ToState))
+	if err != nil {
+		return err
 	}
 
 	fmt.Println("HandleOrderRefunded", e)

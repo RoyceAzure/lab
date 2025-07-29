@@ -108,7 +108,7 @@ func (e *OrderSyncService) flushOrder(flushCount int) (*db.BatchUpdateResult, er
 		}
 	}
 
-	result, err := e.orderRepo.UpdateOrdersBatch(orderList)
+	result, err := e.orderRepo.UpdateOrdersBatch(context.Background(), orderList)
 	if err != nil {
 		// 只有事務錯誤才回傳
 		if checkGormTransactionError(err) {
