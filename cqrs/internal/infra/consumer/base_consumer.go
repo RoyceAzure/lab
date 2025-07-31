@@ -117,7 +117,7 @@ func (c *baseConsumer) Start(ctx context.Context) error {
 
 				err = c.handler.Handle(ctx, data)
 				if err != nil {
-					log.Println("error", err)
+					// log.Println("error", err)
 					continue
 				}
 			case err := <-errChan:

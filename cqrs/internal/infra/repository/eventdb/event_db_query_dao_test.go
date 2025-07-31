@@ -240,7 +240,7 @@ func (s *EventDBQueryTestSuite) TearDownTest() {
 	// 清理測試商品資料
 	for _, product := range s.testProducts {
 		// 清理商品庫存（Redis）
-		_, err := s.productRepo.AddProductStock(s.ctx, product.ProductID, 0)
+		_, _, err := s.productRepo.AddProductStock(s.ctx, product.ProductID, 0)
 		s.Require().NoError(err)
 		// 清理商品資料
 		err = s.productRepo.DeleteProductStock(s.ctx, product.ProductID)

@@ -39,6 +39,7 @@ type IProductRepository interface {
 	HardDeleteProduct(ctx context.Context, id string) error
 	GetProductsInStock(ctx context.Context) ([]model.Product, error)
 	GetProductStock(ctx context.Context, productID string) (int, error)
+	GetProductReserved(ctx context.Context, productID string) (int, error)
 	AddProductStock(ctx context.Context, productID string, quantity uint) (int, error)
 	DeductProductStock(ctx context.Context, productID string, quantity uint) (int, error)
 }
@@ -126,6 +127,10 @@ func (u *UnifiedDBImpl) GetProductByCode(ctx context.Context, code string) (*mod
 
 func (u *UnifiedDBImpl) AddProductStock(ctx context.Context, productID string, quantity uint) (int, error) {
 	return u.ProductDBRepo.AddProductStock(ctx, productID, quantity)
+}
+
+func (u *UnifiedDBImpl) GetProductReserved(ctx context.Context, productID string) (int, error) {
+	return u.ProductDBRepo.GetProductReserved(ctx, productID)
 }
 
 func (u *UnifiedDBImpl) DeductProductStock(ctx context.Context, productID string, quantity uint) (int, error) {

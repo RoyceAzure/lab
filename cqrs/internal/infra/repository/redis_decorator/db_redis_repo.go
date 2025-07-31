@@ -147,13 +147,13 @@ func (w *WiteBackProductRepo) GetProductStock(ctx context.Context, productID str
 }
 
 func (w *WiteBackProductRepo) AddProductStock(ctx context.Context, productID string, quantity uint) (int, error) {
-	stock, err := w.IProductRedisRepository.AddProductStock(ctx, productID, quantity)
+	stock, timestamp, err := w.IProductRedisRepository.AddProductStock(ctx, productID, quantity)
 	if err != nil {
 		return 0, err
 	}
 
 	go func() {
-		if err := w.producer.UpdateProductReserved(ctx, &model.Product{ProductID: productID, Reserved: uint(stock)}); err != nil {
+		if err := w.producer.UpdateProductReserved(ctx, &model.Product{ProductID: productID, Reserved: uint(stock)}, timestamp); err != nil {
 			// 監控告警
 			// metrics.IncrKafkaFailure()
 			log.Error().Err(err).Msgf("kafka add product stock produce failed, product_id with stock quantity: %s, %d", productID, stock)
@@ -164,13 +164,13 @@ func (w *WiteBackProductRepo) AddProductStock(ctx context.Context, productID str
 }
 
 func (w *WiteBackProductRepo) DeductProductStock(ctx context.Context, productID string, quantity uint) (int, error) {
-	stock, err := w.IProductRedisRepository.DeductProductStock(ctx, productID, quantity)
+	stock, timestamp, err := w.IProductRedisRepository.DeductProductStock(ctx, productID, quantity)
 	if err != nil {
 		return 0, err
 	}
 
 	go func() {
-		if err := w.producer.UpdateProductReserved(ctx, &model.Product{ProductID: productID, Reserved: uint(stock)}); err != nil {
+		if err := w.producer.UpdateProductReserved(ctx, &model.Product{ProductID: productID, Reserved: uint(stock)}, timestamp); err != nil {
 			// 監控告警
 			// metrics.IncrKafkaFailure()
 			log.Error().Err(err).Msgf("kafka deduct product stock produce failed, product_id with stock quantity: %s, %d", productID, stock)
@@ -180,7 +180,7 @@ func (w *WiteBackProductRepo) DeductProductStock(ctx context.Context, productID 
 }
 
 func (w *WiteBackProductRepo) HardDeleteProduct(ctx context.Context, productID string) error {
-	_, err := w.IProductRedisRepository.DeductProductStock(ctx, productID, 0)
+	_, _, err := w.IProductRedisRepository.DeductProductStock(ctx, productID, 0)
 	if err != nil {
 		return err
 	}

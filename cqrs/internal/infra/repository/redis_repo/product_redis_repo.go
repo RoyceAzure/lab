@@ -17,8 +17,8 @@ type IProductRedisRepository interface {
 	// GetProductStock 取得商品庫存數量
 	GetProductStock(ctx context.Context, productID string) (int, error)
 
-	// AddProductStock 增加商品庫存數量
-	AddProductStock(ctx context.Context, productID string, quantity uint) (int, error)
+	// AddProductStock 增加商品庫存數量，返回時間戳(毫秒)
+	AddProductStock(ctx context.Context, productID string, quantity uint) (int, int64, error)
 
 	// UpdateProductStock 修改商品庫存數量
 	UpdateProductStock(ctx context.Context, productID string, quantity uint) error
@@ -26,8 +26,8 @@ type IProductRedisRepository interface {
 	// DeleteProductStock 刪除商品庫存
 	DeleteProductStock(ctx context.Context, productID string) error
 
-	// DeductProductStock 原子性扣減庫存
-	DeductProductStock(ctx context.Context, productID string, quantity uint) (int, error)
+	// DeductProductStock 原子性扣減庫存，返回時間戳(毫秒)
+	DeductProductStock(ctx context.Context, productID string, quantity uint) (int, int64, error)
 }
 
 type ProductRepoError error
@@ -102,15 +102,44 @@ func (s *ProductRedisRepo) GetProductStock(ctx context.Context, productID string
 	return int(stockInt), nil
 }
 
-// 增加庫存商品數量
-func (s *ProductRedisRepo) AddProductStock(ctx context.Context, productID string, quantity uint) (int, error) {
+// 增加庫存商品數量，返回時間戳(毫秒)
+func (s *ProductRedisRepo) AddProductStock(ctx context.Context, productID string, quantity uint) (int, int64, error) {
 	redisKey := generateProductStockKey(productID)
-	// HIncrBy 會返回增加後的值
-	result := s.productCache.HIncrBy(ctx, redisKey, ReservedKey, int64(quantity))
-	if err := result.Err(); err != nil {
-		return 0, err
+
+	const addStockScript = `
+    local key = KEYS[1]
+    local quantity = tonumber(ARGV[1])
+    local field = ARGV[2]
+    
+    -- 增加庫存
+    local new_stock = redis.call('HINCRBY', key, field, quantity)
+    
+    -- 獲取當前時間戳（毫秒）
+    local timestamp = redis.call('TIME')
+    local ms_timestamp = timestamp[1] * 1000 + math.floor(timestamp[2] / 1000)
+    
+    return {new_stock, ms_timestamp}
+    `
+
+	result, err := s.productCache.Eval(ctx, addStockScript, []string{redisKey}, quantity, ReservedKey).Result()
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to add stock: %w", err)
 	}
-	return int(result.Val()), nil
+
+	// 檢查返回值是否為數組
+	resultArray, ok := result.([]interface{})
+	if !ok || len(resultArray) != 2 {
+		return 0, 0, fmt.Errorf("unexpected result format")
+	}
+
+	// 解析庫存和時間戳
+	newStock, ok1 := resultArray[0].(int64)
+	timestamp, ok2 := resultArray[1].(int64)
+	if !ok1 || !ok2 {
+		return 0, 0, fmt.Errorf("unexpected result type")
+	}
+
+	return int(newStock), timestamp, nil
 }
 
 // 修改庫存商品數量
@@ -142,50 +171,62 @@ func (s *ProductRedisRepo) DeleteProductStock(ctx context.Context, productID str
 			- ErrProductStockNotEnough: 庫存不足
 			- err: 其他錯誤
 */
-func (s *ProductRedisRepo) DeductProductStock(ctx context.Context, productID string, quantity uint) (int, error) {
+func (s *ProductRedisRepo) DeductProductStock(ctx context.Context, productID string, quantity uint) (int, int64, error) {
 	redisKey := generateProductStockKey(productID)
 
 	const stockDeductionScript = `
-	local key = KEYS[1]
-	local quantity = tonumber(ARGV[1])
-	local field = ARGV[2]
-	
-	if redis.call('EXISTS', key) == 0 then
-		return -1
-	end
-	
-	local current_stock = redis.call('HGET', key, field)
-	if not current_stock then
-		return -1
-	end
-	
-	current_stock = tonumber(current_stock)
-	
-	if current_stock < quantity then
-		return -2  -- 表示庫存不足
-	end
-	
-	local new_stock = redis.call('HINCRBY', key, field, -quantity)
-	return new_stock
-	`
+    local key = KEYS[1]
+    local quantity = tonumber(ARGV[1])
+    local field = ARGV[2]
+    
+    if redis.call('EXISTS', key) == 0 then
+        return {-1, 0}
+    end
+    
+    local current_stock = redis.call('HGET', key, field)
+    if not current_stock then
+        return {-1, 0}
+    end
+    
+    current_stock = tonumber(current_stock)
+    
+    if current_stock < quantity then
+        return {-2, 0}  -- 表示庫存不足
+    end
+    
+    local new_stock = redis.call('HINCRBY', key, field, -quantity)
+    
+    local timestamp = redis.call('TIME')
+    local ms_timestamp = timestamp[1] * 1000 + math.floor(timestamp[2] / 1000)
+    
+    return {new_stock, ms_timestamp}
+    `
 
 	result, err := s.productCache.Eval(ctx, stockDeductionScript, []string{redisKey}, quantity, ReservedKey).Result()
 	if err != nil {
-		return 0, fmt.Errorf("failed to deduct stock: %w", err)
+		return 0, 0, fmt.Errorf("failed to deduct stock: %w", err)
 	}
 
-	resultInt, ok := result.(int64)
-	if !ok {
-		return 0, fmt.Errorf("unexpected result type: %T", result)
+	// 檢查返回值是否為數組
+	resultArray, ok := result.([]interface{})
+	if !ok || len(resultArray) != 2 {
+		return 0, 0, fmt.Errorf("unexpected result format")
+	}
+
+	// 解析庫存和時間戳
+	newStock, ok1 := resultArray[0].(int64)
+	timestamp, ok2 := resultArray[1].(int64)
+	if !ok1 || !ok2 {
+		return 0, 0, fmt.Errorf("unexpected result type")
 	}
 
 	switch {
-	case resultInt == -1:
-		return 0, fmt.Errorf("%w: product with id %s not found", ErrProductNotFound, productID)
-	case resultInt == -2:
-		return 0, fmt.Errorf("%w: product with id %s reserved not enough", ErrProductStockNotEnough, productID)
+	case newStock == -1:
+		return 0, 0, fmt.Errorf("%w: product with id %s not found", ErrProductNotFound, productID)
+	case newStock == -2:
+		return 0, 0, fmt.Errorf("%w: product with id %s reserved not enough", ErrProductStockNotEnough, productID)
 	default:
-		return int(resultInt), nil
+		return int(newStock), timestamp, nil
 	}
 }
 

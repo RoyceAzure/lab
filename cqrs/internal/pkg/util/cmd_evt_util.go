@@ -35,3 +35,25 @@ func CacheOrderToOrderItemData(cartCache *model.Cart) []model.OrderItemData {
 	}
 	return orderItems
 }
+
+func CartItemToOrderItem(cartCache *model.Cart) []model.OrderItem {
+	orderItems := make([]model.OrderItem, len(cartCache.OrderItems))
+	for i, item := range cartCache.OrderItems {
+		orderItems[i] = model.OrderItem{
+			ProductID: item.ProductID,
+			Quantity:  item.Quantity,
+		}
+	}
+	return orderItems
+}
+
+func OrderItemDataToCartItem(orderItems []model.OrderItemData) []model.CartItem {
+	cartItems := make([]model.CartItem, len(orderItems))
+	for i, item := range orderItems {
+		cartItems[i] = model.CartItem{
+			ProductID: item.ProductID,
+			Quantity:  item.Quantity,
+		}
+	}
+	return cartItems
+}

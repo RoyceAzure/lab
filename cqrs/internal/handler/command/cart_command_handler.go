@@ -147,8 +147,17 @@ func (h *cartCommandHandler) HandleCartCreated(ctx context.Context, cmd cmd_mode
 		})
 	}
 
+	cart := model.Cart{
+		UserID:     user.UserID,
+		OrderItems: util.OrderItemDataToCartItem(orderItems),
+	}
+
+	err = h.cartRepo.Create(ctx, &cart)
+	if err != nil {
+		return err
+	}
+
 	//次要事件發布，有錯誤會記錄，交由後續程序處理
-	go h.produceCartEvent(ctx, user.UserID, orderItems)
 	go h.produceCartFailedEvent(ctx, user.UserID, errsOrderItem...)
 
 	return nil
@@ -217,14 +226,26 @@ func (h *cartCommandHandler) HandleCartUpdated(ctx context.Context, cmd cmd_mode
 		case cmd_model.CartAddItem:
 			// 扣庫存
 			err = h.productService.SubProductStock(ctx, item.ProductID, uint(item.Quantity))
+			if err != nil {
+				return err
+			}
+			err = h.cartRepo.Delta(ctx, user.UserID, item.ProductID, item.Quantity)
+			if err != nil {
+				return err
+			}
 		case cmd_model.CartSubItem:
 			// 加庫存
 			_, err = h.productService.AddProductStock(ctx, item.ProductID, uint(item.Quantity))
+			if err != nil {
+				return err
+			}
+			err = h.cartRepo.Delta(ctx, user.UserID, item.ProductID, -item.Quantity)
+			if err != nil {
+				return err
+			}
 		}
 		if err != nil {
 			go h.produceCartFailedEvent(ctx, user.UserID, err)
-		} else {
-			go h.produceCartUpdatedEvent(ctx, user.UserID, []cmd_model.CartUpdatedDetial{item})
 		}
 	}
 
@@ -259,6 +280,11 @@ func (h *cartCommandHandler) HandleCartDeleted(ctx context.Context, cmd cmd_mode
 	}
 
 	user, err := h.userService.GetUser(ctx, c.UserID)
+	if err != nil {
+		return err
+	}
+
+	err = h.cartRepo.Clear(ctx, c.UserID)
 	if err != nil {
 		return err
 	}
@@ -317,9 +343,7 @@ func (h *cartCommandHandler) HandleCartConfirmed(ctx context.Context, cmd cmd_mo
 	if err != nil {
 		return err
 	}
-
 	orderCreatedEvent := evt_model.NewOrderCreatedEvent(orderID, user.UserID, orderID, time.Now().UTC(), orderItems, amount, uint(evt_model.OrderStateCreated))
-
 	//儲存user orderid關連到pg
 	userOrder, err := h.userOrderRepo.CreateUserOrder(&model.UserOrder{
 		UserID:  user.UserID,
@@ -329,14 +353,21 @@ func (h *cartCommandHandler) HandleCartConfirmed(ctx context.Context, cmd cmd_mo
 		return err
 	}
 
+	//採用高一致性直接扣除 不要異步發送
+	err = h.subProductStockFromOrderItems(ctx, orderItems)
+	if err != nil {
+		h.userOrderRepo.DeleteUserOrder(userOrder.ID)
+		return err
+	}
+
 	// 唯一真相來源
 	err = h.orderEventDB.SaveOrderCreatedEvent(ctx, orderCreatedEvent)
 	if err != nil {
 		//補償機制  當事件儲存失敗時，視同任務失敗
 		h.userOrderRepo.DeleteUserOrder(userOrder.ID)
+		h.addProductStockFromOrderItems(ctx, orderItems)
 		return fmt.Errorf("%w: %v", errUserOrderCreateFailed, err)
 	}
-
 	//次要事件發布，有錯誤會記錄，交由後續程序處理
 	// go h.produceCartDeletedEvent(ctx, user.UserID)
 	go h.produceOrderCreatedEvent(ctx, user.UserID, orderCreatedEvent)
@@ -351,4 +382,24 @@ func (h *cartCommandHandler) produceOrderCreatedEvent(ctx context.Context, userI
 	}
 
 	h.orderProducer.Produce(ctx, []message.Message{msg})
+}
+
+func (h *cartCommandHandler) subProductStockFromOrderItems(ctx context.Context, orderItems []model.OrderItemData) error {
+	for _, item := range orderItems {
+		err := h.productService.SubProductDBStock(ctx, item.ProductID, uint(item.Quantity))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (h *cartCommandHandler) addProductStockFromOrderItems(ctx context.Context, orderItems []model.OrderItemData) error {
+	for _, item := range orderItems {
+		err := h.productService.AddProductDBStock(ctx, item.ProductID, uint(item.Quantity))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

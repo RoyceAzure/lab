@@ -40,7 +40,7 @@ func (suite *ProductRepoTestSuite) TestBasicProductStockOperations() {
 	assert.Equal(suite.T(), 100, stock)
 
 	// 增加庫存
-	_, err = suite.productRepo.AddProductStock(ctx, "test1", 50)
+	_, _, err = suite.productRepo.AddProductStock(ctx, "test1", 50)
 	assert.NoError(suite.T(), err)
 
 	// 檢查增加後的庫存
@@ -49,7 +49,7 @@ func (suite *ProductRepoTestSuite) TestBasicProductStockOperations() {
 	assert.Equal(suite.T(), 150, stock)
 
 	// 扣減庫存
-	newStock, err := suite.productRepo.DeductProductStock(ctx, "test1", 30)
+	newStock, _, err := suite.productRepo.DeductProductStock(ctx, "test1", 30)
 	assert.NoError(suite.T(), err)
 	assert.Equal(suite.T(), 120, newStock)
 }
@@ -83,7 +83,7 @@ func (suite *ProductRepoTestSuite) TestConcurrentStockOperations() {
 			case <-ctx.Done():
 				return ctx.Err()
 			default:
-				_, err := suite.productRepo.AddProductStock(ctx, "test2", addQuantity)
+				_, _, err := suite.productRepo.AddProductStock(ctx, "test2", addQuantity)
 				if err != nil {
 					return err
 				}
@@ -99,7 +99,7 @@ func (suite *ProductRepoTestSuite) TestConcurrentStockOperations() {
 			case <-ctx.Done():
 				return ctx.Err()
 			default:
-				_, err := suite.productRepo.DeductProductStock(ctx, "test2", addQuantity)
+				_, _, err := suite.productRepo.DeductProductStock(ctx, "test2", addQuantity)
 				if err != nil {
 					if errors.Is(err, ErrProductStockNotEnough) {
 						atomic.AddInt32(&insufficientCount, 1)
@@ -144,7 +144,7 @@ func (suite *ProductRepoTestSuite) TestDeductProductStockErrors() {
 	ctx := context.Background()
 
 	// 測試商品不存在的情況
-	_, err := suite.productRepo.DeductProductStock(ctx, "nonexistent", 10)
+	_, _, err := suite.productRepo.DeductProductStock(ctx, "nonexistent", 10)
 	assert.Error(suite.T(), err)
 	assert.Contains(suite.T(), err.Error(), "not found")
 
@@ -153,7 +153,7 @@ func (suite *ProductRepoTestSuite) TestDeductProductStockErrors() {
 	assert.NoError(suite.T(), err)
 
 	// 測試庫存不足的情況
-	_, err = suite.productRepo.DeductProductStock(ctx, "test3", 100)
+	_, _, err = suite.productRepo.DeductProductStock(ctx, "test3", 100)
 	assert.Error(suite.T(), err)
 	assert.Contains(suite.T(), err.Error(), "stock not enough")
 }

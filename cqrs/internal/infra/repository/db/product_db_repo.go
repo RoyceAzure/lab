@@ -50,6 +50,15 @@ func (s *ProductDBRepo) GetProductStock(ctx context.Context, productID string) (
 	return int(productFromDB.Stock), nil
 }
 
+func (s *ProductDBRepo) GetProductReserved(ctx context.Context, productID string) (int, error) {
+	var productFromDB model.Product
+	err := s.db.Where("product_id = ?", productID).First(&productFromDB).Error
+	if err != nil {
+		return 0, err
+	}
+	return int(productFromDB.Reserved), nil
+}
+
 func (s *ProductDBRepo) AddProductStock(ctx context.Context, productID string, quantity uint) (int, error) {
 	var currentStock int
 	err := s.db.Transaction(func(tx *gorm.DB) error {

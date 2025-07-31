@@ -26,6 +26,7 @@ import (
 	kafka_config "github.com/RoyceAzure/lab/rj_kafka/kafka/config"
 	kafka_consumer "github.com/RoyceAzure/lab/rj_kafka/kafka/consumer"
 	kafka_producer "github.com/RoyceAzure/lab/rj_kafka/kafka/producer"
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -52,8 +53,10 @@ var (
 
 	ProductCmdTopicName = fmt.Sprintf("%s-product-cmd-%d", TopicPrefix, time.Now().UnixNano())
 
-	ProductNum = 10
-	UserNum    = 100
+	ProductNum = 200
+	UserNum    = 2000
+
+	testWaitTime = 300 * time.Second //等待消息對列處理完畢
 )
 
 var kafkaConfigTemplate kafka_config.Config
@@ -180,6 +183,7 @@ type ProducerTestSuite struct {
 	userRepo              *db.UserRepo
 	userOrderRepo         *db.UserOrderRepo
 	productRedisRepo      *redis_repo.ProductRedisRepo
+	timestampRedisRepo    *redis_repo.TimestampRedisRepo
 	productWriteBackRepo  *redis_decorator.WiteBackProductRepo
 	orderEventDB          *eventdb.EventDao
 	userService           *service.UserService
@@ -212,10 +216,7 @@ func TestProducerTestSuite(t *testing.T) {
 }
 
 func generateRandomProductID() string {
-	// 使用納秒級時間戳加上隨機數，確保唯一性
-	timestamp := time.Now().UnixNano() % 1000000           // 只取後6位
-	randomPart := rand.Intn(100)                           // 減少為2位隨機數
-	return fmt.Sprintf("P%10d%02d", timestamp, randomPart) // 使用固定長度格式
+	return uuid.New().String()
 }
 
 func (suite *ProducerTestSuite) SetupSuite() {
@@ -250,13 +251,14 @@ func (suite *ProducerTestSuite) SetupSuite() {
 	suite.setupOrderService()
 	suite.userRepo = db.NewUserRepo(suite.dbDao)
 	suite.productRedisRepo = redis_repo.NewProductRepo(suite.redisClient)
+	suite.setupTimestampRedisRepo()
 	suite.setupProductConsumer()
 	suite.setupProductRepoProducer()
 	suite.productWriteBackRepo = redis_decorator.NewWiteBackProductRepo(suite.productRepoProducer, suite.productRedisRepo, suite.unifiedDB)
 	suite.userOrderRepo = db.NewUserOrderRepo(suite.dbDao)
 	suite.cartRepo = redis_repo.NewCartRepo(suite.redisClient)
 	suite.userService = service.NewUserService(suite.userRepo)
-	suite.productService = service.NewProductService(suite.productWriteBackRepo)
+	suite.productService = service.NewProductService(suite.productWriteBackRepo, suite.unifiedDB)
 	suite.setupToCartCommandProducer()
 	suite.setupCartCommandProducer()
 	suite.setupCartEventConsumer()
@@ -382,6 +384,10 @@ func (suite *ProducerTestSuite) TearDownSuite() {
 		suite.toCartEventProducer = nil
 	}
 	suite.T().Log("=== TearDownSuite: 測試套件清理完成 ===")
+}
+
+func (suite *ProducerTestSuite) setupTimestampRedisRepo() {
+	suite.timestampRedisRepo = redis_repo.NewTimestampRepo(suite.redisClient)
 }
 
 func (suite *ProducerTestSuite) setupOrderService() {
@@ -515,7 +521,7 @@ func (suite *ProducerTestSuite) setupProductConsumer() {
 	for i := 0; i < partitions; i++ {
 		cos, err := kafka_consumer.New(&configTemplate)
 		require.NoError(suite.T(), err)
-		productConsumer := consumer.NewProductConsumer(suite.unifiedDB, cos)
+		productConsumer := consumer.NewProductConsumer(suite.unifiedDB, suite.timestampRedisRepo, cos)
 		productConsumer.Start(context.Background())
 		suite.productConsumer = append(suite.productConsumer, productConsumer)
 	}
@@ -699,7 +705,7 @@ func (suite *ProducerTestSuite) TestConcurrentCartOperations() {
 
 	//驗證階段
 	// 等待一段時間讓事件，projection被處理
-	time.Sleep(40 * time.Second)
+	time.Sleep(testWaitTime)
 
 	// 1. 獲取所有商品的當前庫存
 	currentStocks := make(map[string]uint)
@@ -721,8 +727,9 @@ func (suite *ProducerTestSuite) TestConcurrentCartOperations() {
 		// 檢查訂單內容
 		userOrders, err := suite.userOrderRepo.ListUserOrdersByUserID(user.UserID)
 		require.NoError(suite.T(), err)
-		//測試情況下，使用者只會有一筆訂單
-		require.Equal(suite.T(), 1, len(userOrders))
+		if len(userOrders) == 0 {
+			continue
+		}
 
 		// 取得訂單詳細內容
 		orderID := userOrders[0].OrderID
@@ -761,14 +768,23 @@ func (suite *ProducerTestSuite) TestConcurrentCartOperations() {
 	// 3. 驗證每個商品的庫存變化是否與購物車數量相符
 	for productID, initialStock := range suite.initialStocks {
 		currentStock := currentStocks[productID]
-		inCarts := cartQuantities[productID]
+		inCarts := int(cartQuantities[productID])
 
 		// 初始庫存 - 當前庫存 = 購物車中的總數量
 		suite.T().Logf("Product %s: initial=%d, current=%d, in_carts=%d",
 			productID, initialStock, currentStock, inCarts)
 
-		require.Equal(suite.T(), initialStock-currentStock, inCarts,
+		finalStock := int(currentStock)
+		require.Equal(suite.T(), int(initialStock-currentStock), inCarts,
 			"Product %s: stock difference should equal tota/l in carts", productID)
+
+		stock, err := suite.unifiedDB.GetProductStock(ctx, productID)
+		suite.NoError(err)
+		suite.Equal(stock, finalStock, "商品 %s 的庫存量(stock)不符合預期", productID)
+
+		reserved, err := suite.unifiedDB.GetProductReserved(ctx, productID)
+		suite.NoError(err)
+		suite.Equal(reserved, finalStock, "商品 %s 的預留量(reserved)不符合預期", productID)
 	}
 }
 

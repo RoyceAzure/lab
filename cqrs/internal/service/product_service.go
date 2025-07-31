@@ -47,6 +47,19 @@ type IProductService interface {
 	//   - err: 其他錯誤
 	SubProductStock(ctx context.Context, productID string, quantity uint) error
 
+	// SubProductDBStock 扣除庫存，直接修改db資料，不會跟redis cache互動
+	// 錯誤:
+	//   - errProductStockNotEnough: 庫存不足
+	//   - errProductNotFound: 商品不存在
+	//   - err: 其他錯誤
+	SubProductDBStock(ctx context.Context, productID string, quantity uint) error
+
+	// AddProductDBStock 增加庫存，直接修改db資料，不會跟redis cache互動
+	// 錯誤:
+	//   - errProductNotFound: 商品不存在
+	//   - err: 其他錯誤
+	AddProductDBStock(ctx context.Context, productID string, quantity uint) error
+
 	// GetProductStock 取得商品庫存
 	// 返回值:
 	//   - int: 商品庫存數量
@@ -54,6 +67,14 @@ type IProductService interface {
 	//   - errProductNotFound: 商品不存在
 	//   - err: 其他錯誤
 	GetProductStock(ctx context.Context, productID string) (int, error)
+
+	// GetProductReserved 取得商品預留數量
+	// 返回值:
+	//   - int: 商品預留數量
+	// 錯誤:
+	//   - errProductNotFound: 商品不存在
+	//   - err: 其他錯誤
+	GetProductReserved(ctx context.Context, productID string) (int, error)
 
 	// DeleteProduct 刪除商品
 	// 錯誤:
@@ -64,11 +85,12 @@ type IProductService interface {
 
 type ProductService struct {
 	productWriteBackRepo db.IProductRepository
+	productDBRepo        db.IProductRepository
 }
 
 // NewProductService 創建新的商品服務實例
-func NewProductService(productRepo db.IProductRepository) *ProductService {
-	return &ProductService{productWriteBackRepo: productRepo}
+func NewProductService(productWriteBackRepo db.IProductRepository, productDBRepo db.IProductRepository) *ProductService {
+	return &ProductService{productWriteBackRepo: productWriteBackRepo, productDBRepo: productDBRepo}
 }
 
 func (s *ProductService) CreateProduct(ctx context.Context, product *model.Product) error {
@@ -117,6 +139,20 @@ func (s *ProductService) GetProductStock(ctx context.Context, productID string) 
 
 func (s *ProductService) DeleteProduct(ctx context.Context, productID string) error {
 	return s.productWriteBackRepo.HardDeleteProduct(ctx, productID)
+}
+
+func (s *ProductService) SubProductDBStock(ctx context.Context, productID string, quantity uint) error {
+	_, err := s.productDBRepo.DeductProductStock(ctx, productID, quantity)
+	return err
+}
+
+func (s *ProductService) AddProductDBStock(ctx context.Context, productID string, quantity uint) error {
+	_, err := s.productDBRepo.AddProductStock(ctx, productID, quantity)
+	return err
+}
+
+func (s *ProductService) GetProductReserved(ctx context.Context, productID string) (int, error) {
+	return s.productDBRepo.GetProductReserved(ctx, productID)
 }
 
 var _ IProductService = (*ProductService)(nil)

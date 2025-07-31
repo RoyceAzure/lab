@@ -2,6 +2,7 @@ package producer
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 
 	"github.com/RoyceAzure/lab/cqrs/internal/domain/model"
@@ -27,7 +28,7 @@ func NewProductProducer(producer producer.Producer) *ProductProducer {
 }
 
 func (p *ProductProducer) AddNewProduct(ctx context.Context, product *model.Product) error {
-	msg, err := p.convertToMessage(ProductCommandAdd, product)
+	msg, err := p.convertToMessage(ProductCommandAdd, product, 0)
 	if err != nil {
 		return err
 	}
@@ -36,7 +37,7 @@ func (p *ProductProducer) AddNewProduct(ctx context.Context, product *model.Prod
 }
 
 func (p *ProductProducer) UpdateProductStock(ctx context.Context, product *model.Product) error {
-	msg, err := p.convertToMessage(ProductCommandUpdate, product)
+	msg, err := p.convertToMessage(ProductCommandUpdate, product, 0)
 	if err != nil {
 		return err
 	}
@@ -44,8 +45,8 @@ func (p *ProductProducer) UpdateProductStock(ctx context.Context, product *model
 	return p.producer.Produce(ctx, []message.Message{msg})
 }
 
-func (p *ProductProducer) UpdateProductReserved(ctx context.Context, product *model.Product) error {
-	msg, err := p.convertToMessage(ProductCommandUpdateReserved, product)
+func (p *ProductProducer) UpdateProductReserved(ctx context.Context, product *model.Product, timestamp int64) error {
+	msg, err := p.convertToMessage(ProductCommandUpdateReserved, product, timestamp)
 	if err != nil {
 		return err
 	}
@@ -54,7 +55,7 @@ func (p *ProductProducer) UpdateProductReserved(ctx context.Context, product *mo
 }
 
 func (p *ProductProducer) UpdateProduct(ctx context.Context, product *model.Product) error {
-	msg, err := p.convertToMessage(ProductCommandUpdate, product)
+	msg, err := p.convertToMessage(ProductCommandUpdate, product, 0)
 	if err != nil {
 		return err
 	}
@@ -63,7 +64,7 @@ func (p *ProductProducer) UpdateProduct(ctx context.Context, product *model.Prod
 }
 
 func (p *ProductProducer) DeleteProduct(ctx context.Context, productID string) error {
-	msg, err := p.convertToMessage(ProductCommandDelete, &model.Product{ProductID: productID})
+	msg, err := p.convertToMessage(ProductCommandDelete, &model.Product{ProductID: productID}, 0)
 	if err != nil {
 		return err
 	}
@@ -71,7 +72,7 @@ func (p *ProductProducer) DeleteProduct(ctx context.Context, productID string) e
 	return p.producer.Produce(ctx, []message.Message{msg})
 }
 
-func (p *ProductProducer) convertToMessage(cmd ProductCommand, product *model.Product) (message.Message, error) {
+func (p *ProductProducer) convertToMessage(cmd ProductCommand, product *model.Product, timestamp int64) (message.Message, error) {
 	productValue, err := json.Marshal(product)
 	if err != nil {
 		return message.Message{}, err
@@ -86,6 +87,17 @@ func (p *ProductProducer) convertToMessage(cmd ProductCommand, product *model.Pr
 				Value: []byte(cmd),
 			},
 		},
+	}
+
+	if timestamp != 0 {
+		msg.Headers = append(msg.Headers, message.Header{
+			Key: "timestamp",
+			Value: func() []byte {
+				b := make([]byte, 8)
+				binary.BigEndian.PutUint64(b, uint64(timestamp))
+				return b
+			}(),
+		})
 	}
 
 	return msg, nil
