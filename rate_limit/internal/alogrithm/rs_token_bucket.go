@@ -31,7 +31,7 @@ func NewRsBucketToken(client RedisClient, config *LimiterConfig) *RsBucketToken 
 	return rb
 }
 
-func (r *RsBucketToken) Allow(ctx context.Context, key string) bool {
+func (r *RsBucketToken) Allow(ctx context.Context) bool {
 	luaScript := `
 		local key = KEYS[1]
 		local capacity = tonumber(ARGV[1])
@@ -77,9 +77,9 @@ func (r *RsBucketToken) Allow(ctx context.Context, key string) bool {
 	result, err := r.client.Eval(
 		ctx,
 		luaScript,
-		[]string{key},
+		[]string{r.Key},
 		r.Capacity,
-		r.Rate,
+		r.RatePS,
 		time.Now().UnixNano(),
 		r.Capacity, // 初始 tokens 設為最大容量
 	).Int64()

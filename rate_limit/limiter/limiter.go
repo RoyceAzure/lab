@@ -3,13 +3,19 @@ package limiter
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/RoyceAzure/lab/rate_limit/internal/alogrithm"
 	"github.com/redis/go-redis/v9"
 )
 
 type ILimiter interface {
-	Allow() bool
+	Allow(ctx context.Context) bool
+	SetCapacity(capacity int)
+	SetRefillRate(refillRate time.Duration)
+	SetRatePS(rate int)
+	SetRatePPeriod(rate int)
+	SetKey(key string)
 }
 
 type ILimitManager interface {
@@ -17,17 +23,43 @@ type ILimitManager interface {
 	UseFixedWindow() ILimitManager
 	UseTokenBucket() ILimitManager
 	UseSlideWindow() ILimitManager
+	UseRedisTokenBucket() ILimitManager
+}
+
+type RedisConfig struct {
+	Host     string
+	Port     int
+	Password string
 }
 
 type RateLimiter struct {
 	ILimiter
 	LimiterConfig alogrithm.LimiterConfig
+	config        *RedisConfig
+	client        *redis.Client
 }
 
-func NewRateLimiter(config *alogrithm.LimiterConfig) *RateLimiter {
-	return &RateLimiter{
+type RateLimiterOption func(*RateLimiter)
+
+func WithRedisConfig(config *RedisConfig) RateLimiterOption {
+	return func(r *RateLimiter) {
+		r.config = config
+		r.client = redis.NewClient(&redis.Options{
+			Addr:     fmt.Sprintf("%s:%d", config.Host, config.Port),
+			Password: config.Password,
+		})
+	}
+}
+
+func NewRateLimiter(config *alogrithm.LimiterConfig, opts ...RateLimiterOption) *RateLimiter {
+	r := &RateLimiter{
 		LimiterConfig: *config,
 	}
+
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
 }
 
 func (r *RateLimiter) newRateLimiter(limiter ILimiter) *RateLimiter {
@@ -49,46 +81,6 @@ func (r *RateLimiter) UseSlideWindow() ILimitManager {
 	return r.newRateLimiter(alogrithm.NewSlideWindow(&r.LimiterConfig))
 }
 
-type RedisConfig struct {
-	host     string
-	port     int
-	password string
-}
-
-type IRedisRateLimiter interface {
-	Allow(ctx context.Context, key string) bool
-}
-
-type IRedisLimiterManager interface {
-	IRedisRateLimiter
-	UseBucketToken() IRedisLimiterManager
-}
-
-type RedisRateLimiter struct {
-	IRedisRateLimiter
-	LimiterConfig alogrithm.LimiterConfig
-	config        RedisConfig
-	client        *redis.Client
-}
-
-func NewRedisRateLimiter(config *alogrithm.LimiterConfig, redisConfig RedisConfig) *RedisRateLimiter {
-	return &RedisRateLimiter{
-		LimiterConfig: *config,
-		config:        redisConfig,
-		client: redis.NewClient(&redis.Options{
-			Addr:     fmt.Sprintf("%s:%d", redisConfig.host, redisConfig.port),
-			Password: redisConfig.password,
-		}),
-	}
-}
-
-func (r *RedisRateLimiter) newRedisRateLimiter(limiter IRedisRateLimiter) *RedisRateLimiter {
-	return &RedisRateLimiter{
-		IRedisRateLimiter: limiter,
-		LimiterConfig:     r.LimiterConfig,
-	}
-}
-
-func (r *RedisRateLimiter) UseBucketToken() IRedisLimiterManager {
-	return r.newRedisRateLimiter(alogrithm.NewRsBucketToken(r.client, &r.LimiterConfig))
+func (r *RateLimiter) UseRedisTokenBucket() ILimitManager {
+	return r.newRateLimiter(alogrithm.NewRsBucketToken(r.client, &r.LimiterConfig))
 }

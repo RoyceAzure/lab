@@ -1,6 +1,7 @@
 package alogrithm
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -37,7 +38,7 @@ func NewTokenBucket(config *LimiterConfig) *TokenBucket {
 	return t
 }
 
-func (t *TokenBucket) Allow() bool {
+func (t *TokenBucket) Allow(ctx context.Context) bool {
 	for {
 		current := t.current.Load()
 		if current <= 0 {
@@ -49,32 +50,20 @@ func (t *TokenBucket) Allow() bool {
 	}
 }
 
-func (t *TokenBucket) countNewTokens(current int64, now int64) int64 {
-	lastUpdate := t.lastRefilled.Load()
-	elapsed := time.Duration(now - lastUpdate)
-	tokenToAdd := int64(elapsed.Seconds() * t.Rate)
-	newTokens := current + tokenToAdd
-	if newTokens > int64(t.Capacity) {
-		newTokens = int64(t.Capacity)
-	}
-	return newTokens
-}
-
 func (t *TokenBucket) background() {
 	ticker := time.NewTicker(t.RefillRate)
 	defer ticker.Stop()
-
 	for {
 		select {
 		case <-t.cancel:
 			return
 		case <-ticker.C:
 			for {
-				now := time.Now().UnixNano()
-				current := t.current.Load()
-				newTokens := t.countNewTokens(current, now)
-				if t.current.CompareAndSwap(current, newTokens) {
-					t.lastRefilled.Store(now)
+				newToken := t.current.Load() + int64(t.RatePPeriod)
+				if newToken > int64(t.Capacity) {
+					newToken = int64(t.Capacity)
+				}
+				if t.current.CompareAndSwap(t.current.Load(), newToken) {
 					break
 				}
 			}

@@ -3,6 +3,7 @@ module github.com/RoyceAzure/lab/rate_limit
 go 1.23.3
 
 require (
+	github.com/go-chi/chi/v5 v5.2.2
 	github.com/redis/go-redis/v9 v9.11.0
 	github.com/stretchr/testify v1.10.0
 )

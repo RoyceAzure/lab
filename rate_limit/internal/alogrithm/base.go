@@ -3,30 +3,39 @@ package alogrithm
 import "time"
 
 type LimiterConfig struct {
-	Capacity   int
-	Rate       float64       // tokens/秒
-	RefillRate time.Duration // 補充時間間隔
+	Key         string
+	Capacity    int
+	RatePS      int // tokens/秒
+	RatePPeriod int
+	RefillRate  time.Duration // 補充時間間隔
 }
 
-func (l *LimiterConfig) SetCapacity(capacity int) *LimiterConfig {
+func (l *LimiterConfig) SetCapacity(capacity int) {
 	l.Capacity = capacity
-	return l
 }
 
-func (l *LimiterConfig) SetRate(rate float64) *LimiterConfig {
-	l.Rate = rate
-	return l
+func (l *LimiterConfig) SetRatePS(rate int) {
+	l.RatePS = rate
 }
 
-func (l *LimiterConfig) SetRefillRate(refillRate time.Duration) *LimiterConfig {
+func (l *LimiterConfig) SetRatePPeriod(rate int) {
+	l.RatePPeriod = rate
+}
+
+func (l *LimiterConfig) SetRefillRate(refillRate time.Duration) {
 	l.RefillRate = refillRate
-	return l
+}
+
+func (l *LimiterConfig) SetKey(key string) {
+	l.Key = key
 }
 
 func GetDefaultLimiterConfig() LimiterConfig {
 	return LimiterConfig{
-		Capacity:   100,
-		Rate:       1,
-		RefillRate: time.Second,
+		Key:         "global",
+		Capacity:    100,
+		RatePS:      1,
+		RatePPeriod: 1,
+		RefillRate:  time.Second,
 	}
 }

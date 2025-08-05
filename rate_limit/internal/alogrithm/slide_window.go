@@ -1,6 +1,7 @@
 package alogrithm
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -27,7 +28,7 @@ func NewSlideWindow(config *LimiterConfig) *SlideWindow {
 	return sw
 }
 
-func (w *SlideWindow) Allow() bool {
+func (w *SlideWindow) Allow(ctx context.Context) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 

@@ -1,6 +1,7 @@
 package alogrithm
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -31,7 +32,7 @@ func NewFixWindow(config *LimiterConfig) *FixedWindow {
 	return fw
 }
 
-func (w *FixedWindow) Allow() bool {
+func (w *FixedWindow) Allow(ctx context.Context) bool {
 	current := time.Now()
 	w.mu.RLock()
 	needReset := current.Sub(w.startedAt) > w.RefillRate
