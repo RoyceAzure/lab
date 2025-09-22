@@ -14,6 +14,7 @@ var (
 
 // Config represents the configuration for Kafka client
 type Config struct {
+	Async bool
 	// Broker 配置
 	Brokers []string
 	Topic   string
