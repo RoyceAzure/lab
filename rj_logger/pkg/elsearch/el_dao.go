@@ -23,6 +23,7 @@ type IElSearchDao interface {
 	Update(index, id string, data []byte) error
 	Delete(index, id string) error
 	Search(index string, query elastic.Query) ([]byte, error)
+	BatchInsert(index string, documents []map[string]interface{}) error
 	Close() error
 }
 
@@ -180,6 +181,21 @@ func (e *ElSearchDao) Search(index string, query elastic.Query) ([]byte, error) 
 	// 將整個結果轉換為 JSON
 	return json.Marshal(hits)
 }
+
+func (e *ElSearchDao) BatchInsert(index string, documents []map[string]interface{}) error {
+	bulkRequest := e.client.Bulk()
+
+	for _, doc := range documents {
+		req := elastic.NewBulkIndexRequest().
+			Index(index).
+			Doc(doc)
+		bulkRequest = bulkRequest.Add(req)
+	}
+
+	_, err := bulkRequest.Do(context.Background())
+	return err
+}
+
 func (e *ElSearchDao) Close() error {
 	e.client.Stop()
 	return nil

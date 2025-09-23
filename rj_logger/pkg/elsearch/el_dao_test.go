@@ -10,7 +10,7 @@ import (
 
 func TestElSearchDao(t *testing.T) {
 	// 初始化 ES
-	err := InitELSearch("http://localhost:9200", "123456")
+	err := InitELSearch("http://localhost:9200", "password")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,5 +137,33 @@ func TestElSearchDao(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+	})
+
+	t.Run("Test BatchInsert", func(t *testing.T) {
+		// 準備測試數據
+		documents := []map[string]interface{}{
+			{
+				"title":     "Test Doc 1",
+				"content":   "This is test document 1",
+				"timestamp": time.Now().Format(time.RFC3339),
+			},
+			{
+				"title":     "Test Doc 2",
+				"content":   "This is test document 2",
+				"timestamp": time.Now().Format(time.RFC3339),
+			},
+			{
+				"title":     "Test Doc 3",
+				"content":   "This is test document 3",
+				"timestamp": time.Now().Format(time.RFC3339),
+			},
+		}
+
+		err := dao.BatchInsert("test-index", documents)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		t.Logf("Successfully inserted %d documents", len(documents))
 	})
 }
