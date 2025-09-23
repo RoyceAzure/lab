@@ -1,0 +1,55 @@
+services:
+  elsearch:
+    image: ghcr.io/royceazure/sexy_stock/elsearch:dev-latest
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    environment:
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD}
+      # Elasticsearch JVM 優化
+      ES_JAVA_OPTS: "-Xms4g -Xmx4g"
+      discovery.type: "single-node"
+      bootstrap.memory_lock: "true"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-u", "elastic:${ELASTIC_PASSWORD}", "http://127.0.0.1:9200/_cat/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'     
+          memory: 8G       
+        reservations:
+          cpus: '1.0'
+          memory: 4G
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.17.0
+    ports:
+      - "5601:5601"
+    environment:
+      ELASTICSEARCH_HOSTS: http://elsearch:9200
+      ELASTICSEARCH_USERNAME: elastic
+      ELASTICSEARCH_PASSWORD: ${ELASTIC_PASSWORD}
+    depends_on:
+      elsearch:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G       
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+
+volumes:
+  elasticsearch_data:
