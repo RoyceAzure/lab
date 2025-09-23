@@ -42,7 +42,7 @@ func New(cfg *config.Config) (Producer, error) {
 		BatchTimeout: cfg.BatchTimeout,
 		WriteTimeout: cfg.WriteTimeout,
 		MaxAttempts:  cfg.RetryAttempts,
-		Async:        false,
+		Async:        cfg.Async,
 		RequiredAcks: kafka.RequiredAcks(cfg.RequiredAcks),
 
 		// 錯誤處理
@@ -80,7 +80,7 @@ func (p *kafkaProducer) Produce(ctx context.Context, msgs []message.Message) err
 		if ctx.Err() != nil {
 			return errors.NewKafkaError("Produce", p.cfg.Topic, ctx.Err())
 		}
-		//同步模式，會block到所有消息都寫入
+		//若是同步模式，會block到所有消息都寫入
 		err = p.writer.WriteMessages(ctx, kafkaMsgs...)
 		if err == nil {
 			return nil
