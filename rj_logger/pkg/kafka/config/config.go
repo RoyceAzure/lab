@@ -21,17 +21,11 @@ type Config struct {
 
 	// 消費者配置
 	ConsumerGroup    string
-	ConsumerMinBytes int           //最小消費大小
-	ConsumerMaxBytes int           //最大消費大小
-	ConsumerMaxWait  time.Duration //最大等待時間
-
-	// 自動提交時間間隔，不需要手動CommitMessages()
-	// consumer自己session內部會維持一個offset
-	// 這裡Commit 是提交一個分區的offset, 用於初始化用
-	// 也就是盡管一定時間內沒有offset, 同一個消費者仍能消費到最新的offset
-	// 缺點就是若消費者崩潰，則必需從原本的未更新的分區offset重新開始消費
-	CommitInterval time.Duration
-	Partition      int
+	ConsumerMinBytes int
+	ConsumerMaxBytes int
+	ConsumerMaxWait  time.Duration
+	CommitInterval   time.Duration
+	Partition        int
 
 	// 生產者配置
 	BatchSize     int
