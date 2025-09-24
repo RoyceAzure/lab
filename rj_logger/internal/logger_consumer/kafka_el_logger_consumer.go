@@ -29,6 +29,11 @@ func GetDefaultConfigForLogger() *config.Config {
 	}
 }
 
+// 同一個模組使用同一個主題 使用timestamp讓elastic 做log排序
+// 同一個獏組使用多個分區消耗以應付大量訊息
+// consumer數量 分區數量要先想好  在創建對應數量的KafkaElLoggerConsumer
+// 若consumer logger 自己本身執行有錯誤  就直接寫入到elastic
+// 如果要使用pipline模式  就會有消息丟失風險  因為consumer讀取後就會自動commit，並不知道消息處理結果
 func NewKafkaElLoggerConsumer(elDao elsearch.IElSearchDao, kafkaConsumer consumer.Consumer) (*KafkaElLoggerConsumer, error) {
 	return &KafkaElLoggerConsumer{
 		dao:           elDao,
@@ -36,7 +41,8 @@ func NewKafkaElLoggerConsumer(elDao elsearch.IElSearchDao, kafkaConsumer consume
 	}, nil
 }
 
-func (fc *ElLoggerConsumer) handler(message []byte) error {
+// 每次batch size 數量message傳入 使用batch insert
+func (fc *KafkaElLoggerConsumer) handler(message []byte) error {
 	if fc.closed.Load() {
 		return fmt.Errorf("consumer is closed")
 	}
@@ -48,7 +54,8 @@ func (fc *ElLoggerConsumer) handler(message []byte) error {
 	return nil
 }
 
-func (fc *ElLoggerConsumer) Start(queueName string) error {
+// 使用 batch insert
+func (fc *KafkaElLoggerConsumer) Start(queueName string) error {
 	if fc.closed.Load() {
 		return fmt.Errorf("consumer is closed")
 	}
@@ -56,7 +63,7 @@ func (fc *ElLoggerConsumer) Start(queueName string) error {
 	return fc.IConsumer.Consume(queueName, fc.handler)
 }
 
-func (fc *ElLoggerConsumer) Close() error {
+func (fc *KafkaElLoggerConsumer) Close() error {
 	return errors.Join(
 		fc.elLogger.Close(),
 		fc.IConsumer.Close(),
