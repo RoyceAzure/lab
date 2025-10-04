@@ -1,20 +1,20 @@
 package logger_consumer
 
 import (
-	"errors"
-	"fmt"
-	"sync/atomic"
+	"context"
+	"encoding/json"
+	"log"
 	"time"
 
+	"github.com/RoyceAzure/lab/rj_logger/pkg/elsearch"
 	"github.com/RoyceAzure/lab/rj_logger/pkg/kafka/config"
-	"github.com/RoyceAzure/lab/rj_logger/pkg/kafka/consumer"
-	"github.com/RoyceAzure/rj/infra/elsearch"
+	"github.com/segmentio/kafka-go"
 )
 
-type KafkaElLoggerConsumer struct {
-	dao           elsearch.IElSearchDao
-	kafkaConsumer consumer.Consumer
-	closed        atomic.Bool // 添加狀態追踪
+// for kafka consumer
+type KafkaElProcesser struct {
+	bufferSize int
+	dao        elsearch.IElSearchDao
 }
 
 // 預設的Kafka logger消費者配置
@@ -29,43 +29,56 @@ func GetDefaultConfigForLogger() *config.Config {
 	}
 }
 
-// 同一個模組使用同一個主題 使用timestamp讓elastic 做log排序
-// 同一個獏組使用多個分區消耗以應付大量訊息
-// consumer數量 分區數量要先想好  在創建對應數量的KafkaElLoggerConsumer
-// 若consumer logger 自己本身執行有錯誤  就直接寫入到elastic
-// 如果要使用pipline模式  就會有消息丟失風險  因為consumer讀取後就會自動commit，並不知道消息處理結果
-func NewKafkaElLoggerConsumer(elDao elsearch.IElSearchDao, kafkaConsumer consumer.Consumer) (*KafkaElLoggerConsumer, error) {
-	return &KafkaElLoggerConsumer{
-		dao:           elDao,
-		kafkaConsumer: kafkaConsumer,
+func NewKafkaElProcesser(elDao elsearch.IElSearchDao, bufferSize int) (*KafkaElProcesser, error) {
+	return &KafkaElProcesser{
+		dao:        elDao,
+		bufferSize: bufferSize,
 	}, nil
 }
 
-// 每次batch size 數量message傳入 使用batch insert
-func (fc *KafkaElLoggerConsumer) handler(message []byte) error {
-	if fc.closed.Load() {
-		return fmt.Errorf("consumer is closed")
+// 將in chan關閉視為結束訊號
+// 處理完本身持有msg，送入out，就return
+// 若batch 失敗  要丟棄?
+func (p *KafkaElProcesser) Process(ctx context.Context, in <-chan kafka.Message, out chan<- kafka.Message) {
+	documents := make([]map[string]interface{}, 0, p.bufferSize)
+	toCommits := make([]kafka.Message, 0, p.bufferSize)
+
+	ticker := time.NewTicker(3 * time.Second)
+	for msg := range in {
+		select {
+		case <-ticker.C:
+			if len(documents) > 0 {
+				err := p.dao.BatchInsert(string(msg.Key), documents)
+				if err != nil {
+					log.Printf("Elastic logger consumer write log get err : %s", err.Error())
+				} else {
+					for _, m := range toCommits {
+						out <- m
+					}
+				}
+				documents = documents[:0]
+				toCommits = toCommits[:0]
+			}
+		default:
+			var doc map[string]interface{}
+			if err := json.Unmarshal(msg.Value, &doc); err != nil {
+				log.Printf("Elastic logger consumer transform log content get err : %s", err.Error())
+				continue
+			}
+			documents = append(documents, doc)
+			toCommits = append(toCommits, msg)
+		}
 	}
 
-	_, err := fc.elLogger.Write(message)
-	if err != nil {
-		return fmt.Errorf("failed to write message to log file: %w", err)
-	}
-	return nil
-}
-
-// 使用 batch insert
-func (fc *KafkaElLoggerConsumer) Start(queueName string) error {
-	if fc.closed.Load() {
-		return fmt.Errorf("consumer is closed")
+	if len(documents) > 0 {
+		err := p.dao.BatchInsert(string(toCommits[0].Key), documents)
+		if err != nil {
+			log.Printf("Elastic logger consumer write log get err : %s", err.Error())
+		} else {
+			for _, m := range toCommits {
+				out <- m
+			}
+		}
 	}
 
-	return fc.IConsumer.Consume(queueName, fc.handler)
-}
-
-func (fc *KafkaElLoggerConsumer) Close() error {
-	return errors.Join(
-		fc.elLogger.Close(),
-		fc.IConsumer.Close(),
-	)
 }

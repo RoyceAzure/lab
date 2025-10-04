@@ -1,7 +1,5 @@
 github.com/RoyceAzure/lab/rj_kafka v0.0.0-20250923080232-e94646104d52 h1:e34sPkWCxZ4s1zigz69IU+rkOKmL58pOC7JPb1smmFE=
 github.com/RoyceAzure/lab/rj_kafka v0.0.0-20250923080232-e94646104d52/go.mod h1:44ZddbbbmY2WGVMjrGmtksIMT4U5ZQmBno/fBKiTqSo=
-github.com/RoyceAzure/rj/infra v0.0.0-20250924050750-ed4c63dcf8e5 h1:jGwjJ73d6kpi1ReGyKTJrWXKKAkxvdHGUJTnV50/Zbk=
-github.com/RoyceAzure/rj/infra v0.0.0-20250924050750-ed4c63dcf8e5/go.mod h1:O7TpWmyS4dV95qyUY/T786VyOsnhf/69KX9SwjDHvKc=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/fortytw2/leaktest v1.3.0 h1:u8491cBMTQ8ft8aeV+adlcytMZylmA5nnwwkRZjI8vw=

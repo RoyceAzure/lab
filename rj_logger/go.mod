@@ -4,7 +4,6 @@ go 1.23.3
 
 require (
 	github.com/RoyceAzure/lab/rj_kafka v0.0.0-20250923080232-e94646104d52
-	github.com/RoyceAzure/rj/infra v0.0.0-20250924050750-ed4c63dcf8e5
 	github.com/golang/mock v1.6.0
 	github.com/olivere/elastic/v7 v7.0.32
 	github.com/segmentio/kafka-go v0.4.49

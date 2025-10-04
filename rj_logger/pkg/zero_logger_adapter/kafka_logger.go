@@ -2,7 +2,9 @@ package logger
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	lab_config "github.com/RoyceAzure/lab/rj_kafka/kafka/config"
@@ -52,8 +54,9 @@ type kafkaLoggerConfig struct {
 
 // for consumer  不需要接收來自zerolog的資訊
 type KafkaLogger struct {
-	cf *kafkaLoggerConfig
-	w  producer.Producer
+	cf    *kafkaLoggerConfig
+	w     producer.Producer
+	logId atomic.Int64
 }
 
 func transCf(config kafkaLoggerConfig) *lab_config.Config {
@@ -101,9 +104,12 @@ func (kw *KafkaLogger) Write(p []byte) (n int, err error) {
 		return 0, fmt.Errorf("file logger is not init")
 	}
 
+	kw.logId.Add(int64(1))
+	kbuf := make([]byte, 0, 8)
+	binary.BigEndian.PutUint64(kbuf, uint64(kw.logId.Load()))
 	err = kw.w.Produce(context.Background(), []message.Message{
 		{
-			Key:   kw.cf.modulerBytes,
+			Key:   kbuf, //不能使用模組名稱  因為要使用分區  或者乾脆取模 平均分配
 			Value: p,
 		},
 	})
