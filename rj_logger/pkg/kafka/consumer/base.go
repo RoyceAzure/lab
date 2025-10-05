@@ -39,13 +39,14 @@ type BaseConsumer struct {
 // 不使用pipline，用內簽方式達到一體成形的處理消息
 // readMsg -> processer處理消息 -> 根據結果決定commit
 // 批次讀取是在conn這一層
-func NewBaseConsumer(reader *kafka.Reader) *BaseConsumer {
+func NewBaseConsumer(reader *kafka.Reader, p Processer) *BaseConsumer {
 	return &BaseConsumer{
 		reader:                  reader,
 		processerNum:            10,
 		retryTimes:              0,
 		retryInterVal:           100 * time.Millisecond,
 		batchSize:               10000,
+		processer:               p,
 		resultChan:              make(chan kafka.Message, 10000),
 		processChan:             make(chan kafka.Message, 1000),
 		isHandleResultCompelete: make(chan struct{}),
@@ -79,7 +80,9 @@ func (b *BaseConsumer) startConsumerLoop() {
 // 讀取訊息並放入chan， chan 須由參數傳入
 // 依據錯誤類型有重試機制，或者直接關閉consumer
 func (b *BaseConsumer) readMsg(ctx context.Context, ch chan<- kafka.Message) {
-	defer close(ch) //重要，1. chan 要由發送者負責關閉 2 .且不論任何原因發送者return, chan都必須關閉
+	defer close(ch)
+
+	//重要，1. chan 要由發送者負責關閉 2 .且不論任何原因發送者return, chan都必須關閉
 
 	var (
 		msg kafka.Message

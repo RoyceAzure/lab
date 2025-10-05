@@ -29,6 +29,8 @@ func GetDefaultConfigForLogger() *config.Config {
 	}
 }
 
+// bufferSize int 最大batch size
+// Process操作將會是併發，所以batch size應設為 需求數/併發數
 func NewKafkaElProcesser(elDao elsearch.IElSearchDao, bufferSize int) (*KafkaElProcesser, error) {
 	return &KafkaElProcesser{
 		dao:        elDao,
@@ -38,7 +40,7 @@ func NewKafkaElProcesser(elDao elsearch.IElSearchDao, bufferSize int) (*KafkaElP
 
 // 將in chan關閉視為結束訊號
 // 處理完本身持有msg，送入out，就return
-// 若batch 失敗  要丟棄?
+// 併發操作
 func (p *KafkaElProcesser) Process(ctx context.Context, in <-chan kafka.Message, out chan<- kafka.Message) {
 	documents := make([]map[string]interface{}, 0, p.bufferSize)
 	toCommits := make([]kafka.Message, 0, p.bufferSize)
