@@ -49,6 +49,7 @@ func (p *KafkaElProcesser) Process(ctx context.Context, in <-chan kafka.Message,
 	for msg := range in {
 		select {
 		case <-ticker.C:
+			apppendMsg(msg, &documents, &toCommits)
 			if len(documents) > 0 {
 				err := p.dao.BatchInsert(string(msg.Key), documents)
 				if err != nil {
@@ -62,13 +63,7 @@ func (p *KafkaElProcesser) Process(ctx context.Context, in <-chan kafka.Message,
 				toCommits = toCommits[:0]
 			}
 		default:
-			var doc map[string]interface{}
-			if err := json.Unmarshal(msg.Value, &doc); err != nil {
-				log.Printf("Elastic logger consumer transform log content get err : %s", err.Error())
-				continue
-			}
-			documents = append(documents, doc)
-			toCommits = append(toCommits, msg)
+			apppendMsg(msg, &documents, &toCommits)
 		}
 	}
 
@@ -82,5 +77,14 @@ func (p *KafkaElProcesser) Process(ctx context.Context, in <-chan kafka.Message,
 			}
 		}
 	}
+}
 
+func apppendMsg(msg kafka.Message, documents *[]map[string]interface{}, toCommits *[]kafka.Message) {
+	var doc map[string]interface{}
+	if err := json.Unmarshal(msg.Value, &doc); err != nil {
+		log.Printf("Elastic logger consumer transform log content get err : %s", err.Error())
+		return
+	}
+	*documents = append(*documents, doc)
+	*toCommits = append(*toCommits, msg)
 }
