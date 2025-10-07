@@ -73,7 +73,7 @@ func setUpKafkaElProcesser() {
 		panic(fmt.Errorf("reader is not init"))
 	}
 	var err error
-	processer, err = logger_consumer.NewKafkaElProcesser(elasticDao, defaultConsummerBufferSize)
+	processer, err = logger_consumer.NewKafkaElProcesser(elasticDao, defaultConsummerBufferSize, 100*time.Millisecond)
 	if err != nil {
 		panic(err)
 	}

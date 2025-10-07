@@ -15,7 +15,7 @@ import (
 )
 
 type Processer interface {
-	Process(context.Context, <-chan kafka.Message, chan<- kafka.Message) //必須是無狀態
+	Process(context.Context, <-chan kafka.Message, chan<- kafka.Message, chan<- kafka.Message) //必須是無狀態
 }
 
 type BaseConsumer struct {
@@ -32,6 +32,7 @@ type BaseConsumer struct {
 	processer               Processer
 	processChan             chan kafka.Message
 	resultChan              chan kafka.Message
+	dlq                     chan kafka.Message
 	isHandleResultCompelete chan struct{}
 	reader                  *kafka.Reader
 }
@@ -49,6 +50,7 @@ func NewBaseConsumer(reader *kafka.Reader, p Processer) *BaseConsumer {
 		processer:               p,
 		resultChan:              make(chan kafka.Message, 10000),
 		processChan:             make(chan kafka.Message, 1000),
+		dlq:                     make(chan kafka.Message, 1000),
 		isHandleResultCompelete: make(chan struct{}),
 	}
 }
@@ -69,7 +71,7 @@ func (b *BaseConsumer) startConsumerLoop() {
 		b.wg.Add(1)
 		go func() {
 			defer b.wg.Done()
-			b.processer.Process(b.ctx, b.processChan, b.resultChan)
+			b.processer.Process(b.ctx, b.processChan, b.resultChan, b.dlq)
 		}()
 	}
 	go b.handleResult(b.resultChan, b.isHandleResultCompelete)
