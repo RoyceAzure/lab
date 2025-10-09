@@ -1,12 +1,8 @@
-package logger_consumer
+package consumer
 
 import (
 	"context"
-	"encoding/binary"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"sync"
 	"testing"
 	"time"
 
@@ -15,11 +11,6 @@ import (
 	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/require"
 )
-
-type TestMsg struct {
-	Topic   string `json:"topic"`
-	Message string `json:"message"`
-}
 
 type TestCase struct {
 	name             string
@@ -30,45 +21,6 @@ type TestCase struct {
 	nRoutine         int
 	setupIn          func(input []kafka.Message, in chan kafka.Message)
 	exceptDatas      []kafka.Message
-}
-
-func generateTestMessage(n int) []kafka.Message {
-	t := make([]kafka.Message, 0, n)
-	for i := 0; i < n; i++ {
-		buf := make([]byte, 4, 4)
-		binary.BigEndian.PutUint32(buf, uint32(i))
-		testMsg := TestMsg{
-			Topic:   "test",
-			Message: fmt.Sprintf("this is test message %d", i),
-		}
-
-		b, err := json.Marshal(testMsg)
-		if err != nil {
-			panic(err)
-		}
-		m := kafka.Message{
-			Key:   buf,
-			Value: b,
-		}
-		t = append(t, m)
-	}
-	return t
-}
-
-func generateBadTestMessage(n int) []kafka.Message {
-	t := make([]kafka.Message, 0, n)
-	for i := 0; i < n; i++ {
-		buf := make([]byte, 4, 4)
-		binary.BigEndian.PutUint32(buf, uint32(i))
-		testMsg := fmt.Sprintf("this is test message %d", i)
-
-		m := kafka.Message{
-			Key:   buf,
-			Value: []byte(testMsg),
-		}
-		t = append(t, m)
-	}
-	return t
 }
 
 func handleResult(exp, act, dlq []kafka.Message) (excepted map[string]any, actual map[string]any) {
@@ -205,50 +157,18 @@ func TestBasic(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			data := tc.generateCasefunc(tc.caseN)
 
-			in, out := make(chan kafka.Message, tc.bufferSize), make(chan kafka.Message, tc.caseN)
-			dlq := make(chan kafka.Message, tc.bufferSize)
-			go func() {
-				defer close(in)
-				tc.setupIn(data, in)
-			}()
-
 			tc.setUPMock(mockDao)
 
-			KafkaElProcesser, err := NewKafkaElProcesser(mockDao, tc.bufferSize, time.Millisecond)
+			KafkaElProcesser, err := NewKafkaElProcesser(mockDao, time.Millisecond)
 			require.Nil(t, err)
 
-			var wg sync.WaitGroup
-			for i := 0; i < tc.nRoutine; i++ {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					KafkaElProcesser.Process(context.Background(), in, out, dlq)
-				}()
-			}
-
-			go func() {
-				for {
-					select {
-					case _, ok := <-dlq:
-						if !ok {
-							return
-						}
-					}
-				}
-			}()
-
-			wg.Wait()
-			close(out)
-			close(dlq)
-
-			res := make([]kafka.Message, 0, tc.caseN)
-			for o := range out {
-				res = append(res, o)
-			}
-
-			failedMsg := make([]kafka.Message, 0, tc.caseN)
-			for m := range dlq {
-				failedMsg = append(failedMsg, m)
+			res := make([]kafka.Message, 0)
+			failedMsg := make([]kafka.Message, 0)
+			err = KafkaElProcesser.Process(context.Background(), data)
+			if err != nil {
+				failedMsg = append(failedMsg, data...)
+			} else {
+				res = append(res, data...)
 			}
 
 			excepted, actual := handleResult(data, res, failedMsg)
@@ -355,50 +275,18 @@ func TestFailedCases(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			data := tc.generateCasefunc(tc.caseN)
 
-			in, out := make(chan kafka.Message, tc.bufferSize), make(chan kafka.Message, tc.caseN)
-			dlq := make(chan kafka.Message, tc.bufferSize)
-			go func() {
-				defer close(in)
-				tc.setupIn(data, in)
-			}()
-
 			tc.setUPMock(mockDao)
 
-			KafkaElProcesser, err := NewKafkaElProcesser(mockDao, tc.bufferSize, time.Millisecond)
+			KafkaElProcesser, err := NewKafkaElProcesser(mockDao, time.Millisecond)
 			require.Nil(t, err)
 
-			var wg sync.WaitGroup
-			for i := 0; i < tc.nRoutine; i++ {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					KafkaElProcesser.Process(context.Background(), in, out, dlq)
-				}()
-			}
-
-			go func() {
-				for {
-					select {
-					case _, ok := <-dlq:
-						if !ok {
-							return
-						}
-					}
-				}
-			}()
-
-			wg.Wait()
-			close(out)
-			close(dlq)
-
 			res := make([]kafka.Message, 0, tc.caseN)
-			for o := range out {
-				res = append(res, o)
-			}
-
 			failedMsg := make([]kafka.Message, 0, tc.caseN)
-			for m := range dlq {
-				failedMsg = append(failedMsg, m)
+			err = KafkaElProcesser.Process(context.Background(), data)
+			if err != nil {
+				failedMsg = append(failedMsg, data...)
+			} else {
+				res = append(res, data...)
 			}
 
 			excepted, actual := handleResult(data, res, failedMsg)
@@ -436,50 +324,22 @@ func TestFailedMessageCases(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			data := tc.generateCasefunc(tc.caseN)
 
-			in, out := make(chan kafka.Message, tc.bufferSize), make(chan kafka.Message, tc.caseN)
-			dlq := make(chan kafka.Message, tc.bufferSize)
-			go func() {
-				defer close(in)
-				tc.setupIn(data, in)
-			}()
-
 			tc.setUPMock(mockDao)
 
-			KafkaElProcesser, err := NewKafkaElProcesser(mockDao, tc.bufferSize, time.Millisecond)
+			KafkaElProcesser, err := NewKafkaElProcesser(mockDao, time.Millisecond)
 			require.Nil(t, err)
 
-			var wg sync.WaitGroup
-			for i := 0; i < tc.nRoutine; i++ {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					KafkaElProcesser.Process(context.Background(), in, out, dlq)
-				}()
-			}
-
-			failedMsg := make([]kafka.Message, 0, tc.caseN)
-
-			go func() {
-				for m := range dlq {
-					failedMsg = append(failedMsg, m)
-				}
-			}()
-
 			res := make([]kafka.Message, 0, tc.caseN)
-			go func() {
-				for o := range out {
-					res = append(res, o)
-				}
-
-			}()
-
-			wg.Wait()
-			close(out)
-			close(dlq)
+			failedMsg := make([]kafka.Message, 0, tc.caseN)
+			err = KafkaElProcesser.Process(context.Background(), data)
+			if err != nil {
+				failedMsg = append(failedMsg, data...)
+			} else {
+				res = append(res, data...)
+			}
 
 			excepted, actual := handleResult(data, res, failedMsg)
 
-			require.Len(t, actual, len(excepted))
 			require.Equal(t, excepted, actual)
 		})
 	}
