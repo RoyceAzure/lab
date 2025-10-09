@@ -79,8 +79,16 @@ func (b *Consumer) Start() {
 }
 
 func (b *Consumer) startConsumerLoop() {
-	go b.readMsg(b.ctx, b.processChan) // kafka reader 只能有一個 goroutine
-
+	b.handleResultWg.Add(1)
+	go func() {
+		defer b.handleResultWg.Done()
+		b.handleResult(b.resultChan)
+	}()
+	b.handleResultWg.Add(1)
+	go func() {
+		defer b.handleResultWg.Done()
+		b.handleError(b.dlq)
+	}()
 	for i := 0; i < b.processerNum; i++ {
 		b.processWg.Add(1)
 		go func() {
@@ -88,18 +96,7 @@ func (b *Consumer) startConsumerLoop() {
 			b.process(b.ctx, b.processChan, b.resultChan, b.dlq)
 		}()
 	}
-
-	b.handleResultWg.Add(1)
-	go func() {
-		defer b.handleResultWg.Done()
-		b.handleResult(b.resultChan)
-	}()
-
-	b.handleResultWg.Add(1)
-	go func() {
-		defer b.handleResultWg.Done()
-		b.handleError(b.dlq)
-	}()
+	go b.readMsg(b.ctx, b.processChan) // kafka reader 只能有一個 goroutine
 }
 
 // 以關閉 in 當作結束訊號，會持續處理直到in沒有訊息
@@ -265,12 +262,7 @@ func (b *Consumer) handleError(dlq <-chan ConsuemError) {
 // 剩餘資料可以直接拋棄
 func (b *Consumer) Stop(timeout time.Duration) error {
 	t := time.NewTicker(timeout)
-	go func() {
-		defer func() {
-			b.isStopped <- struct{}{}
-		}()
-		b.stop()
-	}()
+	b.cancel()
 
 	select {
 	case <-t.C:
@@ -291,7 +283,6 @@ func (b *Consumer) stop() {
 	if !b.isRunning.CompareAndSwap(true, false) {
 		return
 	}
-	b.cancel()
 	close(b.processChan)
 	b.processWg.Wait()
 	close(b.resultChan)

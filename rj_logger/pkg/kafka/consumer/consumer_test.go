@@ -87,6 +87,7 @@ func TestBasicConsumer(t *testing.T) {
 	testCases := []struct {
 		name               string
 		testMsgs           int
+		earilyStop         time.Duration
 		setUpReaderMock    func(chan kafka.Message, chan kafka.Message, *mock_consumer.MockKafkaReader)
 		generateTestMsg    func(int) []kafka.Message
 		setUpProcesserMock func(m *mock_consumer.MockProcesser)
@@ -101,7 +102,37 @@ func TestBasicConsumer(t *testing.T) {
 					DoAndReturn(func(ctx context.Context) (kafka.Message, error) {
 						m, ok := <-in
 						if !ok {
-							close(expected)
+							return kafka.Message{}, io.EOF
+						}
+						expected <- m
+						return m, nil
+					}).AnyTimes()
+				reader.EXPECT().CommitMessages(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+			},
+			generateTestMsg: generateTestMessage,
+			setUpProcesserMock: func(m *mock_consumer.MockProcesser) {
+				m.EXPECT().Process(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+			},
+			handlerSuccessfunc: func(msg kafka.Message) {
+				successMu.Lock()
+				defer successMu.Unlock()
+				successMsgs = append(successMsgs, msg)
+			},
+			handlerErrorfunc: func(err ConsuemError) {
+				errorMu.Lock()
+				defer errorMu.Unlock()
+				failedMsgs = append(failedMsgs, err.Message)
+			},
+		},
+		{
+			name:       "all pass, reader EOF end, early stop",
+			testMsgs:   10000,
+			earilyStop: 20 * time.Millisecond,
+			setUpReaderMock: func(in, expected chan kafka.Message, reader *mock_consumer.MockKafkaReader) {
+				reader.EXPECT().FetchMessage(gomock.Any()).
+					DoAndReturn(func(ctx context.Context) (kafka.Message, error) {
+						m, ok := <-in
+						if !ok {
 							return kafka.Message{}, io.EOF
 						}
 						expected <- m
@@ -130,7 +161,7 @@ func TestBasicConsumer(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
-			successMsgs, failedMsgs = make([]kafka.Message, tc.testMsgs), make([]kafka.Message, tc.testMsgs)
+			successMsgs, failedMsgs = make([]kafka.Message, 0, tc.testMsgs), make([]kafka.Message, 0, tc.testMsgs)
 			Inch, expected := make(chan kafka.Message, tc.testMsgs), make(chan kafka.Message, tc.testMsgs)
 
 			mockProcesser := mock_consumer.NewMockProcesser(ctrl)
@@ -151,12 +182,22 @@ func TestBasicConsumer(t *testing.T) {
 			concumser := NewConsumer(mock_reader, mockProcesser, tc.handlerSuccessfunc, tc.handlerErrorfunc)
 			concumser.Start()
 
-			select {
-			case <-concumser.C():
-			case <-time.After(time.Second * 10):
-				require.Fail(t, "timeout: test did not complete within 10 seconds")
+			if tc.earilyStop > 0 {
+				select {
+				case <-time.After(tc.earilyStop):
+					concumser.Stop(time.Second * 5)
+				case <-concumser.C():
+				case <-time.After(time.Second * 10):
+					require.Fail(t, "timeout: test did not complete within 10 seconds")
+				}
+			} else {
+				select {
+				case <-concumser.C():
+				case <-time.After(time.Second * 10):
+					require.Fail(t, "timeout: test did not complete within 10 seconds")
+				}
 			}
-
+			close(expected)
 			exp, actual := handleResultConsumer(successMsgs, failedMsgs, expected)
 			require.Equal(t, exp, actual)
 		})
