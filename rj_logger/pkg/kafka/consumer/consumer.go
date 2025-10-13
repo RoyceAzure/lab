@@ -149,6 +149,7 @@ func (b *Consumer) process(ctx context.Context,
 // 依據錯誤類型有重試機制，或者直接關閉consumer
 func (b *Consumer) readMsg(ctx context.Context, in chan<- kafka.Message) {
 	defer b.stop()
+	defer close(b.processChan)
 
 	//重要，1. chan 要由發送者負責關閉 2 .且不論任何原因發送者return, chan都必須關閉
 
@@ -204,18 +205,11 @@ func (b *Consumer) retryBackoff() error {
 		b.retryInterVal = 100 * time.Millisecond
 	}
 
-	return b.waitWithBackoff()
-}
+	time.Sleep(b.retryInterVal)
+	b.retryInterVal *= 2
+	b.lastErrorTime = time.Now()
 
-func (b *Consumer) waitWithBackoff() error {
-	select {
-	case <-b.ctx.Done():
-		return fmt.Errorf("kafka consumer 已經關閉")
-	case <-time.After(b.retryInterVal):
-		b.retryInterVal *= 2
-		b.lastErrorTime = time.Now()
-		return nil
-	}
+	return nil
 }
 
 // 藉由關閉in來退出
@@ -261,15 +255,8 @@ func (b *Consumer) handleError(dlq <-chan ConsuemError) {
 // 若時間到未結束  則提交已完成slice, 這樣kafka可以記錄正確的已完成資料
 // 剩餘資料可以直接拋棄
 func (b *Consumer) Stop(timeout time.Duration) error {
-	t := time.NewTicker(timeout)
-	b.cancel()
-
-	select {
-	case <-t.C:
-		return fmt.Errorf("無法在時間內關閉kafka consumer, 將來可能會有Msg被重複消費")
-	case <-b.isStopped:
-		return nil
-	}
+	b.stop()
+	return nil
 }
 
 // 1.kafka rader停止讀取
@@ -283,7 +270,7 @@ func (b *Consumer) stop() {
 	if !b.isRunning.CompareAndSwap(true, false) {
 		return
 	}
-	close(b.processChan)
+	b.cancel()
 	b.processWg.Wait()
 	close(b.resultChan)
 	close(b.dlq)
