@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/RoyceAzure/lab/rj_logger/pkg/kafka/config"
 	mock_consumer "github.com/RoyceAzure/lab/rj_logger/pkg/kafka/consumer/mock"
 	"github.com/golang/mock/gomock"
 	"github.com/segmentio/kafka-go"
@@ -387,7 +388,15 @@ func TestBasicConsumer(t *testing.T) {
 				}
 			}()
 
-			concumser := NewConsumer(mock_reader, mockProcesser, tc.handlerSuccessfunc, tc.handlerErrorfunc)
+			cfg := config.DefaultConfig()
+			cfg.BatchSize = 1000
+			cfg.WorkerNum = 10
+			concumser := NewConsumer(mock_reader,
+				mockProcesser,
+				*cfg,
+				SetHandlerSuccessfunc(tc.handlerSuccessfunc),
+				SetHandlerFailedfunc(tc.handlerErrorfunc))
+
 			concumser.Start()
 
 			if tc.earilyStop > 0 {
@@ -480,7 +489,15 @@ func TestConsumerMutiStop(t *testing.T) {
 				}
 			}()
 
-			concumser := NewConsumer(mock_reader, mockProcesser, tc.handlerSuccessfunc, tc.handlerErrorfunc)
+			cfg := config.DefaultConfig()
+			cfg.BatchSize = 1000
+			cfg.WorkerNum = 10
+			concumser := NewConsumer(mock_reader,
+				mockProcesser,
+				*cfg,
+				SetHandlerSuccessfunc(tc.handlerSuccessfunc),
+				SetHandlerFailedfunc(tc.handlerErrorfunc))
+
 			concumser.Start()
 
 			if tc.earilyStop > 0 {

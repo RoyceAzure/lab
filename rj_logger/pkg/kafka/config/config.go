@@ -20,23 +20,23 @@ type Config struct {
 	Topic   string
 
 	// 消費者配置
-	ConsumerGroup    string
-	ConsumerMinBytes int
-	ConsumerMaxBytes int
-	ConsumerMaxWait  time.Duration
-	CommitInterval   time.Duration
-	Partition        int
+	ConsumerGroup string
+	Partition     int
 
 	// 生產者配置
-	BatchSize     int
-	BatchTimeout  time.Duration
-	RequiredAcks  int
-	RetryAttempts int
-	RetryDelay    time.Duration
+	RequiredAcks int
 
 	// 通用配置
-	ReadTimeout  time.Duration
-	WriteTimeout time.Duration
+	Timeout        time.Duration
+	RetryDelay     time.Duration
+	RetryLimit     int
+	RetryFactor    int
+	WorkerNum      int
+	BatchSize      int
+	MinBytes       int
+	MaxBytes       int
+	MaxWait        time.Duration
+	CommitInterval time.Duration
 
 	// 重連相關配置
 	MaxRetryAttempts   int           `yaml:"max_retry_attempts"`   // 最大重試次數
@@ -62,17 +62,16 @@ func (c *Config) GetBalancer() kafka.Balancer {
 // DefaultConfig returns a Config with default settings
 func DefaultConfig() *Config {
 	return &Config{
-		ConsumerMinBytes: 10e3, // 10KB
-		ConsumerMaxBytes: 10e6, // 10MB
-		ConsumerMaxWait:  time.Second,
-		CommitInterval:   time.Second,
-		BatchSize:        100,
-		BatchTimeout:     time.Second,
-		RequiredAcks:     -1, // 等待所有副本確認
-		RetryAttempts:    3,
-		RetryDelay:       time.Millisecond * 250,
-		ReadTimeout:      10 * time.Second,
-		WriteTimeout:     10 * time.Second,
+		MinBytes:       10e3, // 10KB
+		MaxBytes:       10e6, // 10MB
+		MaxWait:        time.Second,
+		CommitInterval: time.Second,
+		BatchSize:      1000,
+		Timeout:        time.Second,
+		RequiredAcks:   -1, // 等待所有副本確認
+		RetryLimit:     3,
+		RetryDelay:     time.Millisecond * 500,
+		RetryFactor:    2,
 	}
 }
 

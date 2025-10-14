@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/RoyceAzure/lab/rj_logger/pkg/kafka/config"
 	"github.com/segmentio/kafka-go"
 )
 
@@ -21,17 +22,16 @@ type ConsuemError struct {
 
 type Consumer struct {
 	isRunning      atomic.Bool
-	retryTimes     int
-	processerNum   int
-	batchSize      int
 	lastErrorTime  time.Time
-	retryInterVal  time.Duration
+	retryAttempts  int
+	retryInterval  time.Duration
 	processWg      sync.WaitGroup //for process go routine
 	handleResultWg sync.WaitGroup // for handler success, failed go routine
 	ctx            context.Context
 	cancel         context.CancelFunc
 	processer      Processer
 	reader         KafkaReader
+	cfg            config.Config
 
 	processChan        chan kafka.Message
 	resultChan         chan kafka.Message
@@ -41,32 +41,43 @@ type Consumer struct {
 	isStopped          chan struct{}
 }
 
+type option func(*Consumer)
+
+func SetHandlerSuccessfunc(f func(kafka.Message)) option {
+	return func(n *Consumer) {
+		n.handlerSuccessfunc = f
+	}
+}
+func SetHandlerFailedfunc(f func(ConsuemError)) option {
+	return func(n *Consumer) {
+		n.handlerErrorfunc = f
+	}
+}
+
 // 不使用pipline，用內簽方式達到一體成形的處理消息
 // readMsg -> processer處理消息 -> 根據結果決定commit
 // 批次讀取是在conn這一層
-func NewConsumer(reader KafkaReader, p Processer, handlerSuccessfunc func(kafka.Message), handlerErrorfunc func(ConsuemError)) *Consumer {
-	if handlerSuccessfunc == nil {
-		handlerSuccessfunc = DefaultHandleSucessFunc
+func NewConsumer(reader KafkaReader, p Processer, cfg config.Config, ops ...option) *Consumer {
+	if cfg.WorkerNum < 1 {
+		cfg.WorkerNum = 1
 	}
 
-	if handlerErrorfunc == nil {
-		handlerErrorfunc = DefaulthandlerErrorfunc
+	c := &Consumer{
+		reader:        reader,
+		cfg:           cfg,
+		retryInterval: cfg.RetryDelay,
+		processer:     p,
+		resultChan:    make(chan kafka.Message, cfg.BatchSize),
+		processChan:   make(chan kafka.Message, cfg.BatchSize),
+		dlq:           make(chan ConsuemError, cfg.BatchSize),
+		isStopped:     make(chan struct{}),
 	}
 
-	return &Consumer{
-		reader:             reader,
-		processerNum:       10,
-		retryTimes:         0,
-		retryInterVal:      100 * time.Millisecond,
-		batchSize:          10000,
-		processer:          p,
-		resultChan:         make(chan kafka.Message, 10000),
-		processChan:        make(chan kafka.Message, 1000),
-		dlq:                make(chan ConsuemError, 1000),
-		handlerSuccessfunc: handlerSuccessfunc,
-		handlerErrorfunc:   handlerErrorfunc,
-		isStopped:          make(chan struct{}),
+	for _, opt := range ops {
+		opt(c)
 	}
+
+	return c
 }
 
 func (b *Consumer) Start() {
@@ -89,7 +100,7 @@ func (b *Consumer) startConsumerLoop() {
 		defer b.handleResultWg.Done()
 		b.handleError(b.dlq)
 	}()
-	for i := 0; i < b.processerNum; i++ {
+	for i := 0; i < b.cfg.WorkerNum; i++ {
 		b.processWg.Add(1)
 		go func() {
 			defer b.processWg.Done()
@@ -108,7 +119,7 @@ func (b *Consumer) process(ctx context.Context,
 	dlq chan<- ConsuemError) {
 
 	ticker := time.NewTicker(100 * time.Millisecond)
-	batch := make([]kafka.Message, 0, b.batchSize)
+	batch := make([]kafka.Message, 0, b.cfg.BatchSize)
 
 	processMsg := func() {
 		if len(batch) > 0 {
@@ -194,19 +205,19 @@ func (b *Consumer) readMsg(ctx context.Context, in chan<- kafka.Message) {
 }
 
 func (b *Consumer) retryBackoff() error {
-	if b.retryTimes >= 3 {
+	if b.retryAttempts >= int(b.cfg.RetryLimit) {
 		return fmt.Errorf("kafka consumer 重試次數過多，將關閉consumer")
 	}
 
-	if b.lastErrorTime.Add(b.retryInterVal).After(time.Now()) {
-		b.retryTimes++
+	if b.lastErrorTime.Add(b.retryInterval).After(time.Now()) {
+		b.retryAttempts++
 	} else {
-		b.retryTimes = 1
-		b.retryInterVal = 100 * time.Millisecond
+		b.retryAttempts = 1
+		b.retryInterval = b.cfg.RetryDelay
 	}
 
-	time.Sleep(b.retryInterVal)
-	b.retryInterVal *= 2
+	time.Sleep(b.retryInterval)
+	b.retryInterval *= time.Duration(b.cfg.RetryFactor)
 	b.lastErrorTime = time.Now()
 
 	return nil
@@ -217,7 +228,7 @@ func (b *Consumer) handleResult(in <-chan kafka.Message) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
-	toCommit := make([]kafka.Message, 0, b.batchSize)
+	toCommit := make([]kafka.Message, 0, b.cfg.BatchSize)
 
 	commitMsgs := func() {
 		if len(toCommit) > 0 {
