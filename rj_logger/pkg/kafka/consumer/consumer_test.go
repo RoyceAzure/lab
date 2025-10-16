@@ -402,7 +402,7 @@ func TestBasicConsumer(t *testing.T) {
 			if tc.earilyStop > 0 {
 				select {
 				case <-time.After(tc.earilyStop):
-					concumser.Stop(time.Second * 5)
+					concumser.Close(time.Second * 5)
 				case <-concumser.C():
 				case <-time.After(time.Second * 10):
 					require.Fail(t, "timeout: test did not complete within 10 seconds")
@@ -503,10 +503,10 @@ func TestConsumerMutiStop(t *testing.T) {
 			if tc.earilyStop > 0 {
 				select {
 				case <-time.After(tc.earilyStop):
-					concumser.Stop(time.Second * 5)
-					concumser.Stop(time.Second * 5)
-					concumser.Stop(time.Second * 5)
-					concumser.Stop(time.Second * 5)
+					concumser.Close(time.Second * 5)
+					concumser.Close(time.Second * 5)
+					concumser.Close(time.Second * 5)
+					concumser.Close(time.Second * 5)
 				case <-concumser.C():
 				case <-time.After(time.Second * 10):
 					require.Fail(t, "timeout: test did not complete within 10 seconds")

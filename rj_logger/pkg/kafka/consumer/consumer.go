@@ -265,7 +265,7 @@ func (b *Consumer) handleError(dlq <-chan ConsuemError) {
 // 一定時間內消耗剩餘chan 內部資料，並記錄到已完成slice
 // 若時間到未結束  則提交已完成slice, 這樣kafka可以記錄正確的已完成資料
 // 剩餘資料可以直接拋棄
-func (b *Consumer) Stop(timeout time.Duration) error {
+func (b *Consumer) Close(timeout time.Duration) error {
 	b.stop()
 	return nil
 }

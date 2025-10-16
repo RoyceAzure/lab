@@ -1,15 +1,9 @@
 package config
 
 import (
-	"errors"
 	"time"
 
 	"github.com/segmentio/kafka-go"
-)
-
-var (
-	ErrNoBrokers = errors.New("no brokers provided")
-	ErrNoTopic   = errors.New("no topic provided")
 )
 
 // Config represents the configuration for Kafka client
@@ -70,20 +64,9 @@ func DefaultConfig() *Config {
 		Timeout:        time.Second,
 		RequiredAcks:   -1, // 等待所有副本確認
 		RetryLimit:     3,
-		RetryDelay:     time.Millisecond * 500,
+		RetryDelay:     time.Millisecond * 200,
 		RetryFactor:    2,
 	}
-}
-
-// Validate checks if the configuration is valid
-func (c *Config) Validate() error {
-	if len(c.Brokers) == 0 {
-		return ErrNoBrokers
-	}
-	if c.Topic == "" {
-		return ErrNoTopic
-	}
-	return nil
 }
 
 // GetBatchTimeout returns the BatchTimeout if set, otherwise returns a default value

@@ -12,8 +12,10 @@ import (
 )
 
 var (
+	//
+	ErrInvalidateParameter = errors.New("invalidate parameter")
 	// ErrClientClosed 表示消費者或生產者已關閉
-	ErrClientClosed = errors.New("consumer or producer is closed")
+	ErrClientClosed = errors.New("consumer or producer is closed, please call Start() first")
 	// ErrWriteTimeout 表示寫入超時
 	ErrWriteTimeout = errors.New("write timeout")
 	// ErrReadTimeout 表示讀取超時
@@ -97,6 +99,8 @@ func IsConnectionError(err error) bool {
 }
 
 // IsTemporaryError 判斷是否為可重試的臨時錯誤
+// return
+// true 表示可重試, false 表示不可重試
 func IsTemporaryError(err error) bool {
 	if err == nil {
 		return false
