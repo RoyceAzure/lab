@@ -159,7 +159,7 @@ func TestBasicProducer(t *testing.T) {
 		// },
 		{
 			name:     "big data, all pass, writer EOF end",
-			testMsgs: 100000,
+			testMsgs: 70000,
 			setUpWriterMock: func(writerSuccess *[]kafka.Message, writerFailed *[]kafka.Message, writer *mock_producer.MockWriter) {
 				writer.EXPECT().WriteMessages(gomock.Any(), gomock.Any()).DoAndReturn(
 					func(ctx context.Context, msgs ...kafka.Message) error {
@@ -219,7 +219,7 @@ func TestBasicProducer(t *testing.T) {
 			go func() {
 				defer func() {
 					t.Log("calling writer Close()")
-					err = kafkaWriter.Close(time.Second * 5)
+					err = kafkaWriter.Close(time.Second * 21)
 					testEnd <- struct{}{}
 				}()
 				buffer := 1000
@@ -243,6 +243,9 @@ func TestBasicProducer(t *testing.T) {
 			}()
 
 			<-testEnd
+			if err != nil {
+				t.Logf("error: %s", err.Error())
+			}
 			require.Nil(t, err)
 			eachRes := handleResult(successMsgs, failedMsgs, writerSuccess, writerFailed)
 

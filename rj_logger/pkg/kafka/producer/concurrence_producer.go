@@ -123,7 +123,7 @@ func (p *ConcurrencekafkaProducer) Produce(ctx context.Context, msgs []kafka.Mes
 			for j := i; j < len(msgs); j++ {
 				errMsgs = append(errMsgs, msgs[j])
 			}
-			return errMsgs, fmt.Errorf("producer is already closed!")
+			return errMsgs, errors.New("producer is already closed")
 		case p.receiverCh <- msg:
 		default:
 			errMsgs = append(errMsgs, msg)
@@ -184,7 +184,7 @@ func (p *ConcurrencekafkaProducer) process() (bool, error) {
 func (p *ConcurrencekafkaProducer) produce() {
 	defer func() {
 		p.isStopped <- struct{}{}
-		p.stop(time.Second*5, false)
+		p.stop(time.Second*10, false)
 	}()
 
 	var (
@@ -193,13 +193,14 @@ func (p *ConcurrencekafkaProducer) produce() {
 	)
 
 	log.Printf("kafka producer start consumeing msg...")
-	ticker := time.NewTicker(100 * time.Millisecond)
+	ticker := time.NewTicker(p.cfg.CommitInterval)
 	defer ticker.Stop()
 
 normalProcess:
 	for msg := range p.receiverCh {
 		select {
 		case <-ticker.C:
+			p.buffer = append(p.buffer, msg)
 			if len(p.buffer) > 0 {
 				isfatal, err = p.process()
 				if err != nil {
@@ -232,7 +233,6 @@ normalProcess:
 	}
 
 	if isfatal {
-		//清空receiverCh 與 buffer
 		for msg := range p.receiverCh {
 			p.buffer = append(p.buffer, msg)
 		}
@@ -263,6 +263,7 @@ func (p *ConcurrencekafkaProducer) sendMsgs() (bool, error) {
 	defer cancle()
 
 	//若是同步模式，會block到所有消息都寫入
+
 	err = p.writer.WriteMessages(ctx, p.buffer...)
 	if err != nil {
 		err = ka_err.NewKafkaError("Produce", p.cfg.Topic, err)
