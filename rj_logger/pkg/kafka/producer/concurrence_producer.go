@@ -228,12 +228,12 @@ normalProcess:
 					p.batchHandleSuccess()
 				}
 				p.buffer = p.buffer[:0]
-			}
-			//清空ticker
-			ticker.Reset(p.cfg.CommitInterval)
-			select {
-			case <-ticker.C:
-			default:
+				//清空ticker
+				ticker.Reset(p.cfg.CommitInterval)
+				select {
+				case <-ticker.C:
+				default:
+				}
 			}
 		}
 	}
