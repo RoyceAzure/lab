@@ -229,6 +229,12 @@ normalProcess:
 				}
 				p.buffer = p.buffer[:0]
 			}
+			//清空ticker
+			ticker.Reset(p.cfg.CommitInterval)
+			select {
+			case <-ticker.C:
+			default:
+			}
 		}
 	}
 
@@ -263,7 +269,7 @@ func (p *ConcurrencekafkaProducer) sendMsgs() (bool, error) {
 	defer cancle()
 
 	//若是同步模式，會block到所有消息都寫入
-
+	log.Printf("kafka producer send msgs: %d msgs", len(p.buffer))
 	err = p.writer.WriteMessages(ctx, p.buffer...)
 	if err != nil {
 		err = ka_err.NewKafkaError("Produce", p.cfg.Topic, err)
