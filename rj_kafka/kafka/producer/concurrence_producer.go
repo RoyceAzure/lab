@@ -9,29 +9,29 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/segmentio/kafka-go"
-
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/config"
 	ka_err "github.com/RoyceAzure/lab/rj_kafka/kafka/errors"
+	"github.com/RoyceAzure/lab/rj_kafka/kafka/message"
+	"github.com/segmentio/kafka-go"
 )
 
 // Producer interface defines the methods that a Kafka producer must implement
 // 生產者會寫入到固定topic，由config.Config設置
 type Producer interface {
 	// Produce sends messages to Kafka
-	Produce(ctx context.Context, msgs []kafka.Message) ([]kafka.Message, error)
+	Produce(ctx context.Context, msgs []message.Message) ([]message.Message, error)
 	// Close closes the producer
 	Close(time.Duration) error
 }
 
 type ProducerError struct {
-	Message kafka.Message
+	Message message.Message
 	Err     error
 }
 
 type option func(*ConcurrencekafkaProducer)
 
-func SetHandlerSuccessfunc(f func(kafka.Message)) option {
+func SetHandlerSuccessfunc(f func(message.Message)) option {
 	return func(n *ConcurrencekafkaProducer) {
 		n.handlerSuccessfunc = f
 	}
@@ -46,14 +46,14 @@ func SetHandlerFailedfunc(f func(ProducerError)) option {
 // 希望是併發安全，所有Logger調用同一個ConcurrencekafkaProducer
 type ConcurrencekafkaProducer struct {
 	isRunning          atomic.Bool //結束旗標
-	buffer             []kafka.Message
+	buffer             []message.Message
 	cfg                config.Config
 	ctx                context.Context
 	canceled           context.CancelFunc
 	writer             Writer
-	handlerSuccessfunc func(kafka.Message)
+	handlerSuccessfunc func(message.Message)
 	handlerErrorfunc   func(ProducerError)
-	receiverCh         chan []kafka.Message
+	receiverCh         chan []message.Message
 	isStopped          chan struct{} //內部程序是否已經停止旗標
 	chanMutex          sync.Mutex    //確保發送訊息瞬間，chan沒有正在關閉
 }
@@ -101,15 +101,15 @@ func (p *ConcurrencekafkaProducer) Start() {
 		return
 	}
 	p.ctx, p.canceled = context.WithCancel(context.Background())
-	p.buffer = make([]kafka.Message, 0, p.cfg.BatchSize+500)
-	p.receiverCh = make(chan []kafka.Message, 1000)
+	p.buffer = make([]message.Message, 0, p.cfg.BatchSize+500)
+	p.receiverCh = make(chan []message.Message, 1000)
 	p.isStopped = make(chan struct{})
 	go p.produce()
 }
 
 // Produce implements the Producer interface
 // 非同步，若buffer已滿，放棄傳遞並回傳該訊息
-func (p *ConcurrencekafkaProducer) Produce(ctx context.Context, msgs []kafka.Message) (errMsgs []kafka.Message, err error) {
+func (p *ConcurrencekafkaProducer) Produce(ctx context.Context, msgs []message.Message) (errMsgs []message.Message, err error) {
 	if !p.isRunning.Load() {
 		return msgs, ka_err.ErrClientClosed
 	}
@@ -117,7 +117,7 @@ func (p *ConcurrencekafkaProducer) Produce(ctx context.Context, msgs []kafka.Mes
 		return nil, nil
 	}
 
-	errMsgs = make([]kafka.Message, 0, len(msgs))
+	errMsgs = make([]message.Message, 0, len(msgs))
 
 	select {
 	case <-p.ctx.Done():
@@ -252,7 +252,13 @@ func (p *ConcurrencekafkaProducer) sendMsgs() (bool, error) {
 
 	//若是同步模式，會block到所有消息都寫入
 	log.Printf("kafka producer send msgs: %d msgs", len(p.buffer))
-	err = p.writer.WriteMessages(ctx, p.buffer...)
+
+	msgs := make([]kafka.Message, 0, len(p.buffer))
+	for _, msg := range p.buffer {
+		msgs = append(msgs, msg.ToKafkaMessage())
+	}
+
+	err = p.writer.WriteMessages(ctx, msgs...)
 	if err != nil {
 		err = ka_err.NewKafkaError("Produce", p.cfg.Topic, err)
 		return !ka_err.IsTemporaryError(err), err
