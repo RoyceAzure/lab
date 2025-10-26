@@ -2,269 +2,332 @@ package consumer
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/segmentio/kafka-go"
-
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/config"
-	"github.com/RoyceAzure/lab/rj_kafka/kafka/errors"
-	"github.com/RoyceAzure/lab/rj_kafka/kafka/message"
+	"github.com/segmentio/kafka-go"
 )
 
-// ConsumerError 代表消費者錯誤
-type ConsumerError struct {
-	// Fatal 表示是否為致命錯誤，需要終止消費
-	Fatal bool
-	// Err 原始錯誤
-	Err error
-	// RetryAttempt 當前重試次數
-	RetryAttempt int
+type ConsuemError struct {
+	Message kafka.Message
+	Err     error
 }
 
-func (e *ConsumerError) Error() string {
-	if e.Fatal {
-		return fmt.Sprintf("fatal error (attempt %d): %v", e.RetryAttempt, e.Err)
+type Consumer struct {
+	isRunning      atomic.Bool
+	lastErrorTime  time.Time
+	retryAttempts  int
+	retryInterval  time.Duration
+	processWg      sync.WaitGroup //for process go routine
+	handleResultWg sync.WaitGroup // for handler success, failed go routine
+	ctx            context.Context
+	cancel         context.CancelFunc
+	processer      Processer
+	reader         KafkaReader
+	cfg            config.Config
+
+	processChan        chan kafka.Message
+	resultChan         chan kafka.Message
+	dlq                chan ConsuemError
+	handlerSuccessfunc func(kafka.Message)
+	handlerErrorfunc   func(ConsuemError)
+	isStopped          chan struct{}
+}
+
+type option func(*Consumer)
+
+func SetHandlerSuccessfunc(f func(kafka.Message)) option {
+	return func(n *Consumer) {
+		n.handlerSuccessfunc = f
 	}
-	return fmt.Sprintf("temporary error (attempt %d): %v", e.RetryAttempt, e.Err)
+}
+func SetHandlerFailedfunc(f func(ConsuemError)) option {
+	return func(n *Consumer) {
+		n.handlerErrorfunc = f
+	}
 }
 
-// Consumer interface defines the methods that a Kafka consumer must implement
-type Consumer interface {
-	Consume() (<-chan message.Message, <-chan error, error)
-	CommitMessages(msgs ...message.Message) error
-	Close() error
-}
-
-// 實現錯誤恢復機制
-// 使用者只要於呼叫Consumer後，不斷重msgCh, errCh 接收訊息即可
-// 只有當使用者呼叫Close()，才會關閉msgCh, errCh
-type kafkaConsumer struct {
-	reader    *kafka.Reader
-	cfg       *config.Config
-	closed    atomic.Bool          // 控制是否已關閉
-	consuming atomic.Bool          // 控制是否正在消費循環，當消費循環結束後，會設置為false
-	msgCh     chan message.Message //回傳訊息channel
-	errCh     chan error           //回傳錯誤channel
-
-	// 錯誤聚合
-	lastError       atomic.Value // 最後一次錯誤
-	errorCount      atomic.Int32 // 相同錯誤的次數
-	lastErrorTime   atomic.Value // 最後一次錯誤的時間
-	consumingCtx    context.Context
-	consumingCancel context.CancelFunc
-}
-
-// New creates a new Kafka consumer
-func New(cfg *config.Config) (Consumer, error) {
-	if err := cfg.Validate(); err != nil {
-		return nil, err
+// 不使用pipline，用內簽方式達到一體成形的處理消息
+// readMsg -> processer處理消息 -> 根據結果決定commit
+// 批次讀取是在conn這一層
+func NewConsumer(reader KafkaReader, p Processer, cfg config.Config, ops ...option) *Consumer {
+	if cfg.WorkerNum < 1 {
+		cfg.WorkerNum = 1
 	}
 
-	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:        cfg.Brokers,
-		Topic:          cfg.Topic,
-		GroupID:        cfg.ConsumerGroup,
-		MinBytes:       cfg.ConsumerMinBytes,
-		MaxBytes:       cfg.ConsumerMaxBytes,
-		MaxWait:        cfg.ConsumerMaxWait,
-		CommitInterval: cfg.CommitInterval,
-
-		// 重連機制設定
-		Dialer: &kafka.Dialer{
-			Timeout:   cfg.RetryBackoffMax,
-			DualStack: true,
-			KeepAlive: 30 * time.Second,
-		},
-
-		// 錯誤處理
-		ErrorLogger: kafka.LoggerFunc(func(msg string, args ...interface{}) {
-			// 不處理，讓我們自己的錯誤處理機制來處理
-		}),
-
-		// 讀取重試設定
-		ReadBatchTimeout: cfg.RetryBackoffMax,
-		ReadLagInterval:  1 * time.Minute,
-		ReadBackoffMin:   cfg.RetryBackoffMin,
-		ReadBackoffMax:   cfg.RetryBackoffMax,
-	})
-
-	consumer := &kafkaConsumer{
-		reader: reader,
-		cfg:    cfg,
-		msgCh:  make(chan message.Message),
-		errCh:  make(chan error),
+	c := &Consumer{
+		reader:        reader,
+		cfg:           cfg,
+		retryInterval: cfg.RetryDelay,
+		processer:     p,
+		resultChan:    make(chan kafka.Message, cfg.BatchSize),
+		processChan:   make(chan kafka.Message, cfg.BatchSize),
+		dlq:           make(chan ConsuemError, cfg.BatchSize),
+		isStopped:     make(chan struct{}),
 	}
 
-	consumer.lastErrorTime.Store(time.Now())
-	return consumer, nil
+	for _, opt := range ops {
+		opt(c)
+	}
+
+	return c
 }
 
-// shouldReportError 判斷是否需要報告錯誤
-func (c *kafkaConsumer) shouldReportError(err error) bool {
-	lastErr := c.lastError.Load()
-	lastErrTime := c.lastErrorTime.Load().(time.Time)
-
-	// 如果是新的錯誤類型，或者距離上次錯誤已經超過30秒
-	if lastErr == nil || lastErr.(error).Error() != err.Error() || time.Since(lastErrTime) > 30*time.Second {
-		c.lastError.Store(err)
-		c.lastErrorTime.Store(time.Now())
-		c.errorCount.Store(1)
-		return true
+func (b *Consumer) Start() {
+	if !b.isRunning.CompareAndSwap(false, true) {
+		return
 	}
 
-	// 累加錯誤次數
-	count := c.errorCount.Add(1)
-
-	// 每累積10次錯誤才報告一次
-	return count%10 == 0
+	b.ctx, b.cancel = context.WithCancel(context.Background())
+	b.startConsumerLoop()
 }
 
-// Consume implements the Consumer interface
-func (c *kafkaConsumer) Consume() (<-chan message.Message, <-chan error, error) {
-	// 檢查是否已關閉
-	if c.closed.Load() {
-		return nil, nil, errors.ErrClientClosed
-	}
-
-	// 確保只能同時執行一個消費循環
-	if !c.consuming.CompareAndSwap(false, true) {
-		return nil, nil, errors.ErrConsumerAlreadyRunning
-	}
-
-	go c.consumeLoop()
-
-	return c.msgCh, c.errCh, nil
-}
-
-// consumeLoop 處理消費循環
-func (c *kafkaConsumer) consumeLoop() {
-	defer func() {
-		//consuming設為false 表示消費循環結束
-		c.consuming.Store(false)
-		if r := recover(); r != nil {
-			if c.closed.Load() {
-				return
-			}
-			c.errCh <- &ConsumerError{
-				Fatal: true,
-				Err:   fmt.Errorf("consumer panic: %v", r),
-			}
-		}
+func (b *Consumer) startConsumerLoop() {
+	b.handleResultWg.Add(1)
+	go func() {
+		defer b.handleResultWg.Done()
+		b.handleResult(b.resultChan)
 	}()
+	b.handleResultWg.Add(1)
+	go func() {
+		defer b.handleResultWg.Done()
+		b.handleError(b.dlq)
+	}()
+	for i := 0; i < b.cfg.WorkerNum; i++ {
+		b.processWg.Add(1)
+		go func() {
+			defer b.processWg.Done()
+			b.process(b.ctx, b.processChan, b.resultChan, b.dlq)
+		}()
+	}
+	go b.readMsg(b.ctx, b.processChan) // kafka reader 只能有一個 goroutine
+}
 
-	//每次消費循環開始，設置新的context
-	c.consumingCtx, c.consumingCancel = context.WithCancel(context.Background())
+// 以關閉 in 當作結束訊號，會持續處理直到in沒有訊息
+// 結束時會一併關閉out, dlq chan
+// 批次處理，若其中一個錯誤，則整批批次失敗，錯誤訊息也會是同一個
+func (b *Consumer) process(ctx context.Context,
+	in <-chan kafka.Message,
+	out chan<- kafka.Message,
+	dlq chan<- ConsuemError) {
 
-	log.Println("consumeLoop start")
-	for {
-		if c.closed.Load() {
-			return
-		}
+	ticker := time.NewTicker(100 * time.Millisecond)
+	batch := make([]kafka.Message, 0, b.cfg.BatchSize)
 
-		//沒有訊息會自己block
-		msg, err := c.reader.ReadMessage(c.consumingCtx)
-		//若有讀取到消息，則要完整處理完，才回應關閉事件
-		if err != nil {
-			// 處理錯誤
-			kafkaErr := errors.NewKafkaError("Consume", c.cfg.Topic, err)
-			isFatal := errors.IsFatalError(err)
-
-			// 只有在需要報告錯誤時才發送到錯誤通道
-			if c.shouldReportError(kafkaErr) {
-				c.errCh <- &ConsumerError{
-					Fatal: isFatal,
-					Err:   kafkaErr,
+	processMsg := func() {
+		if len(batch) > 0 {
+			err := b.processer.Process(ctx, batch)
+			if err != nil {
+				for _, msg := range batch {
+					dlq <- ConsuemError{
+						Message: msg,
+						Err:     err,
+					}
+				}
+			} else {
+				for _, msg := range batch {
+					out <- msg
 				}
 			}
+			batch = batch[:0]
+		}
+	}
 
-			// 如果是致命錯誤，關閉消費者
-			if isFatal {
-				c.close()
+	for {
+		select {
+		case msg, ok := <-in:
+			if !ok {
+				processMsg()
 				return
 			}
-
-			// 對於非致命錯誤，讓 kafka-go 的重試機制處理
-			if errors.IsConnectionError(err) {
-				time.Sleep(c.cfg.RetryBackoffMin)
-				continue
-			}
-		}
-
-		if err == nil {
-			c.msgCh <- message.FromKafkaMessage(msg)
-		}
-
-		if c.closed.Load() {
-			return
+			batch = append(batch, msg)
+		case <-ticker.C:
+			processMsg()
 		}
 	}
 }
 
-// CommitMessages implements the Consumer interface
-func (c *kafkaConsumer) CommitMessages(msgs ...message.Message) error {
-	if c.closed.Load() {
-		return errors.ErrClientClosed
+// 由額外goroutine執行
+// 注意,kafka reader 並非併發安全，一個goroutine要使用一個reader
+// 讀取訊息並放入chan， chan 須由參數傳入
+// 依據錯誤類型有重試機制，或者直接關閉consumer
+func (b *Consumer) readMsg(ctx context.Context, in chan<- kafka.Message) {
+	defer b.stop()
+	defer close(b.processChan)
+
+	//重要，1. chan 要由發送者負責關閉 2 .且不論任何原因發送者return, chan都必須關閉
+
+	var (
+		msg kafka.Message
+		err error
+	)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			msg, err = b.reader.FetchMessage(ctx)
+
+			if err != nil {
+				// Fatal 錯誤 - 停止消費者
+				if errors.Is(err, io.EOF) ||
+					errors.Is(err, context.Canceled) ||
+					errors.Is(err, context.DeadlineExceeded) {
+					log.Printf("kafka reader 已經關閉,將關閉consumer : %v", err)
+					return
+				}
+
+				if IsKafkaAuthError(err) {
+					log.Printf("kafka reader 遭遇權限錯誤, 將關閉consumer: %v", err)
+					return
+				}
+
+				log.Printf("讀取錯誤: %v", err)
+				err := b.retryBackoff()
+				if err != nil {
+					log.Printf("%s", err)
+					return
+				}
+
+				continue
+			}
+			in <- msg
+		}
+	}
+}
+
+func (b *Consumer) retryBackoff() error {
+	if b.retryAttempts >= int(b.cfg.RetryLimit) {
+		return fmt.Errorf("kafka consumer 重試次數過多，將關閉consumer")
 	}
 
-	kafkaMsgs := make([]kafka.Message, len(msgs))
-	for i, msg := range msgs {
-		kafkaMsgs[i] = msg.ToKafkaMessage()
+	if b.lastErrorTime.Add(b.retryInterval).After(time.Now()) {
+		b.retryAttempts++
+	} else {
+		b.retryAttempts = 1
+		b.retryInterval = b.cfg.RetryDelay
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.WriteTimeout)
-	defer cancel()
-
-	err := c.reader.CommitMessages(ctx, kafkaMsgs...)
-	if err != nil {
-		return errors.NewKafkaError("CommitMessages", c.cfg.Topic, err)
-	}
+	time.Sleep(b.retryInterval)
+	b.retryInterval *= time.Duration(b.cfg.RetryFactor)
+	b.lastErrorTime = time.Now()
 
 	return nil
 }
 
-// close 關閉msgCh, errCh, 設置旗號
-// 以下情況會自動呼叫close:
-// 1. 使用者呼叫Close()
-// 2. 消費者發生致命錯誤
-// 3. 消費者於重新連接時發生錯誤
-func (c *kafkaConsumer) close() error {
-	if !c.closed.CompareAndSwap(false, true) {
-		return nil
-	}
-	log.Println("closing consumer, waiting for consumer loop to complete...")
-
-	// 取消消費循環
-	c.consumingCancel()
-
-	// 等待消費迴圈結束
-	timeout := time.After(10 * time.Second)
+// 藉由關閉in來退出
+func (b *Consumer) handleResult(in <-chan kafka.Message) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
-waitLoop:
-	for {
-		select {
-		case <-timeout:
-			log.Println("timeout waiting for consumer loop to complete")
-			break waitLoop
-		case <-ticker.C:
-			if !c.consuming.Load() {
-				log.Println("consumer loop completed naturally")
-				break waitLoop
-			}
+	toCommit := make([]kafka.Message, 0, b.cfg.BatchSize)
+
+	commitMsgs := func() {
+		if len(toCommit) > 0 {
+			ctx, cancle := context.WithTimeout(context.Background(), 1*time.Second)
+			b.reader.CommitMessages(ctx, toCommit...)
+			cancle()
+			toCommit = toCommit[:0]
 		}
 	}
 
-	log.Println("closing consumer resources...")
-	err := c.reader.Close()
-	close(c.msgCh)
-	close(c.errCh)
-	return err
+	for {
+		select {
+		case msg, ok := <-in:
+			if !ok {
+				commitMsgs()
+				return
+			}
+			b.handlerSuccessfunc(msg)
+			toCommit = append(toCommit, msg)
+		case <-ticker.C:
+			commitMsgs()
+		}
+	}
 }
 
-func (c *kafkaConsumer) Close() error {
-	return c.close()
+func (b *Consumer) handleError(dlq <-chan ConsuemError) {
+	for err := range dlq {
+		b.handlerErrorfunc(err)
+	}
+}
+
+// 訊號關閉時
+// reader停止讀取
+// 一定時間內消耗剩餘chan 內部資料，並記錄到已完成slice
+// 若時間到未結束  則提交已完成slice, 這樣kafka可以記錄正確的已完成資料
+// 剩餘資料可以直接拋棄
+func (b *Consumer) Close(timeout time.Duration) error {
+	b.stop()
+	return nil
+}
+
+// 1.kafka rader停止讀取
+// 2.關閉 processChan
+// 3.等待所有process goroutine消耗完processChan剩餘Msg
+// 4.關閉resultChan
+// 5.等待處理result goroutine 提交所有變更
+// 6. result goroutine處理完後，於 isHandleResultCompelete chan傳遞消息
+// 7. 時間內接收到isHandleResultCompelete 訊號  表示優雅關閉成功
+func (b *Consumer) stop() {
+	if !b.isRunning.CompareAndSwap(true, false) {
+		return
+	}
+	b.cancel()
+	b.processWg.Wait()
+	close(b.resultChan)
+	close(b.dlq)
+	b.handleResultWg.Wait()
+	close(b.isStopped)
+}
+
+func (b *Consumer) C() chan struct{} {
+	return b.isStopped
+}
+
+func IsKafkaAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := err.Error()
+
+	// SASL Authentication errors
+	if strings.Contains(errStr, "SASL Authentication Failed") ||
+		strings.Contains(errStr, "Authentication failed") ||
+		strings.Contains(errStr, "invalid credentials") ||
+		strings.Contains(errStr, "SaslAuthenticationException") {
+		return true
+	}
+
+	// SSL/TLS Authentication errors
+	if strings.Contains(errStr, "SSL handshake failed") ||
+		strings.Contains(errStr, "failed authentication due to") ||
+		strings.Contains(errStr, "certificate") {
+		return true
+	}
+
+	// Authorization errors
+	if strings.Contains(errStr, "not authorized") ||
+		strings.Contains(errStr, "authorization failed") {
+		return true
+	}
+
+	return false
+}
+
+func DefaultHandleSucessFunc(msg kafka.Message) {
+	log.Printf("consume message success :%v", msg)
+}
+
+func DefaulthandlerErrorfunc(msg ConsuemError) {
+	log.Printf("consume message failed :%v, err : %s", msg.Message, msg.Err)
 }

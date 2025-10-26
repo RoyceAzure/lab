@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RoyceAzure/lab/rj_logger/pkg/kafka/config"
-	mock_consumer "github.com/RoyceAzure/lab/rj_logger/pkg/kafka/consumer/mock"
+	"github.com/RoyceAzure/lab/rj_kafka/kafka/config"
+	mock_consumer "github.com/RoyceAzure/lab/rj_kafka/kafka/consumer/mock"
 	"github.com/golang/mock/gomock"
 	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/require"

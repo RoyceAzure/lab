@@ -11,8 +11,8 @@ import (
 
 	"github.com/segmentio/kafka-go"
 
-	"github.com/RoyceAzure/lab/rj_logger/pkg/kafka/config"
-	ka_err "github.com/RoyceAzure/lab/rj_logger/pkg/kafka/errors"
+	"github.com/RoyceAzure/lab/rj_kafka/kafka/config"
+	ka_err "github.com/RoyceAzure/lab/rj_kafka/kafka/errors"
 )
 
 // Producer interface defines the methods that a Kafka producer must implement

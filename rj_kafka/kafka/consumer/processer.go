@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/RoyceAzure/lab/rj_logger/pkg/elsearch"
+	"github.com/RoyceAzure/rj/infra/elsearch"
 	"github.com/segmentio/kafka-go"
 )
 

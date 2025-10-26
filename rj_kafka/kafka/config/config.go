@@ -1,15 +1,9 @@
 package config
 
 import (
-	"errors"
 	"time"
 
 	"github.com/segmentio/kafka-go"
-)
-
-var (
-	ErrNoBrokers = errors.New("no brokers provided")
-	ErrNoTopic   = errors.New("no topic provided")
 )
 
 // Config represents the configuration for Kafka client
@@ -20,29 +14,23 @@ type Config struct {
 	Topic   string
 
 	// 消費者配置
-	ConsumerGroup    string
-	ConsumerMinBytes int           //最小消費大小
-	ConsumerMaxBytes int           //最大消費大小
-	ConsumerMaxWait  time.Duration //最大等待時間
-
-	// 自動提交時間間隔，不需要手動CommitMessages()
-	// consumer自己session內部會維持一個offset
-	// 這裡Commit 是提交一個分區的offset, 用於初始化用
-	// 也就是盡管一定時間內沒有offset, 同一個消費者仍能消費到最新的offset
-	// 缺點就是若消費者崩潰，則必需從原本的未更新的分區offset重新開始消費
-	CommitInterval time.Duration
-	Partition      int
+	ConsumerGroup string
+	Partition     int
 
 	// 生產者配置
-	BatchSize     int
-	BatchTimeout  time.Duration
-	RequiredAcks  int
-	RetryAttempts int
-	RetryDelay    time.Duration
+	RequiredAcks int
 
 	// 通用配置
-	ReadTimeout  time.Duration
-	WriteTimeout time.Duration
+	Timeout        time.Duration
+	RetryDelay     time.Duration
+	RetryLimit     int
+	RetryFactor    int
+	WorkerNum      int
+	BatchSize      int
+	MinBytes       int
+	MaxBytes       int
+	MaxWait        time.Duration
+	CommitInterval time.Duration
 
 	// 重連相關配置
 	MaxRetryAttempts   int           `yaml:"max_retry_attempts"`   // 最大重試次數
@@ -68,29 +56,17 @@ func (c *Config) GetBalancer() kafka.Balancer {
 // DefaultConfig returns a Config with default settings
 func DefaultConfig() *Config {
 	return &Config{
-		ConsumerMinBytes: 10e3, // 10KB
-		ConsumerMaxBytes: 10e6, // 10MB
-		ConsumerMaxWait:  time.Second,
-		CommitInterval:   time.Second,
-		BatchSize:        100,
-		BatchTimeout:     time.Second,
-		RequiredAcks:     -1, // 等待所有副本確認
-		RetryAttempts:    3,
-		RetryDelay:       time.Millisecond * 250,
-		ReadTimeout:      10 * time.Second,
-		WriteTimeout:     10 * time.Second,
+		MinBytes:       10e3, // 10KB
+		MaxBytes:       10e6, // 10MB
+		MaxWait:        time.Second,
+		CommitInterval: 100 * time.Millisecond,
+		BatchSize:      1000,
+		Timeout:        time.Second,
+		RequiredAcks:   -1, // 等待所有副本確認
+		RetryLimit:     3,
+		RetryDelay:     time.Millisecond * 200,
+		RetryFactor:    2,
 	}
-}
-
-// Validate checks if the configuration is valid
-func (c *Config) Validate() error {
-	if len(c.Brokers) == 0 {
-		return ErrNoBrokers
-	}
-	if c.Topic == "" {
-		return ErrNoTopic
-	}
-	return nil
 }
 
 // GetBatchTimeout returns the BatchTimeout if set, otherwise returns a default value

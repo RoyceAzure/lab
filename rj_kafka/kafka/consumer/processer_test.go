@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	mock_el "github.com/RoyceAzure/lab/rj_logger/pkg/elsearch/mock"
+	mock_el "github.com/RoyceAzure/rj/infra/elsearch/mock"
 	"github.com/golang/mock/gomock"
 	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/require"

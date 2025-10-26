@@ -8,85 +8,30 @@ import (
 	"time"
 
 	lab_config "github.com/RoyceAzure/lab/rj_kafka/kafka/config"
-	"github.com/RoyceAzure/lab/rj_kafka/kafka/message"
 	"github.com/RoyceAzure/lab/rj_kafka/kafka/producer"
 	"github.com/segmentio/kafka-go"
 )
 
-type kafkaLoggerConfig struct {
-	AutoResetOffset bool `yaml:"auto_reset_offset"` // 重連後是否重設 offset
-	modulerBytes    []byte
-	moduler         string
-
-	// Broker 配置
-	Topic   string
-	Brokers []string
-
-	// 消費者配置
-	ConsumerGroup    string
-	ConsumerMinBytes int
-	ConsumerMaxBytes int
-	Partition        int
-	ConsumerMaxWait  time.Duration
-	CommitInterval   time.Duration
-
-	// 生產者配置
-	RequiredAcks  int
-	RetryAttempts int
-	BatchSize     int
-	BatchTimeout  time.Duration
-	RetryDelay    time.Duration
-
-	// 通用配置
-	ReadTimeout  time.Duration
-	WriteTimeout time.Duration
-
-	// 重連相關配置
-	MaxRetryAttempts   int           `yaml:"max_retry_attempts"`   // 最大重試次數
-	RetryBackoffMin    time.Duration `yaml:"retry_backoff_min"`    // 最小重試間隔
-	RetryBackoffMax    time.Duration `yaml:"retry_backoff_max"`    // 最大重試間隔
-	RetryBackoffFactor float64       `yaml:"retry_backoff_factor"` // 重試間隔增長因子
-	ReconnectWaitTime  time.Duration `yaml:"reconnect_wait_time"`  // 重連等待時間
-
-	// 分區策略配置
-	Balancer kafka.Balancer // 自定義負載平衡器
-}
-
 // for consumer  不需要接收來自zerolog的資訊
 type KafkaLogger struct {
-	cf    *kafkaLoggerConfig
 	w     producer.Producer
 	logId atomic.Int64
 }
 
-func transCf(config kafkaLoggerConfig) *lab_config.Config {
-	return &lab_config.Config{
-		Brokers: config.Brokers,
-		Topic:   config.Topic,
-
-		// 生產者配置
-		BatchSize:     config.BatchSize,
-		BatchTimeout:  config.BatchTimeout,
-		RequiredAcks:  config.RequiredAcks,
-		RetryAttempts: config.RetryAttempts,
-		RetryDelay:    config.RetryDelay,
-		Async:         true,
-		// 通用配置
-		ReadTimeout:  config.ReadTimeout,
-		WriteTimeout: config.WriteTimeout,
-
-		// 重連相關配置
-		MaxRetryAttempts:   config.MaxRetryAttempts,
-		RetryBackoffMin:    config.RetryBackoffMin,
-		RetryBackoffMax:    config.RetryBackoffMax,
-		RetryBackoffFactor: config.RetryBackoffFactor,
-		AutoResetOffset:    config.AutoResetOffset,
-		ReconnectWaitTime:  config.ReconnectWaitTime,
+func NewKafkaLogger(cfg *lab_config.Config) (*KafkaLogger, error) {
+	w := &kafka.Writer{
+		Addr:         kafka.TCP(cfg.Brokers...),
+		Topic:        cfg.Topic,
+		Balancer:     &kafka.LeastBytes{},
+		BatchTimeout: cfg.Timeout,
+		BatchSize:    cfg.BatchSize,
+		// 設置較短的超時時間以快速發現問題
+		WriteTimeout: 5 * time.Second,
+		// 設置重試
+		MaxAttempts: 3,
 	}
-}
 
-func NewKafkaLogger(config *kafkaLoggerConfig) (*KafkaLogger, error) {
-	p, err := producer.New(transCf(*config))
+	p, err := producer.NewConcurrencekafkaProducer(w, *cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +52,7 @@ func (kw *KafkaLogger) Write(p []byte) (n int, err error) {
 	kw.logId.Add(int64(1))
 	kbuf := make([]byte, 0, 8)
 	binary.BigEndian.PutUint64(kbuf, uint64(kw.logId.Load()))
-	err = kw.w.Produce(context.Background(), []message.Message{
+	err = kw.w.Produce(context.Background(), []kafka.Message{
 		{
 			Key:   kbuf, //不能使用模組名稱  因為要使用分區  或者乾脆取模 平均分配
 			Value: p,
@@ -122,5 +67,5 @@ func (kw *KafkaLogger) Write(p []byte) (n int, err error) {
 }
 
 func (fw *KafkaLogger) Close() error {
-	return fw.w.Close()
+	return fw.w.Close(time.Second * 15)
 }
