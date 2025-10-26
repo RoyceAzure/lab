@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -52,8 +53,9 @@ type ConcurrencekafkaProducer struct {
 	writer             Writer
 	handlerSuccessfunc func(kafka.Message)
 	handlerErrorfunc   func(ProducerError)
-	receiverCh         chan kafka.Message
+	receiverCh         chan []kafka.Message
 	isStopped          chan struct{} //內部程序是否已經停止旗標
+	chanMutex          sync.Mutex    //確保發送訊息瞬間，chan沒有正在關閉
 }
 
 // 目前默認是同步模式，會block到所有消息都寫入
@@ -100,7 +102,7 @@ func (p *ConcurrencekafkaProducer) Start() {
 	}
 	p.ctx, p.canceled = context.WithCancel(context.Background())
 	p.buffer = make([]kafka.Message, 0, p.cfg.BatchSize+500)
-	p.receiverCh = make(chan kafka.Message, 50000)
+	p.receiverCh = make(chan []kafka.Message, 1000)
 	p.isStopped = make(chan struct{})
 	go p.produce()
 }
@@ -117,18 +119,18 @@ func (p *ConcurrencekafkaProducer) Produce(ctx context.Context, msgs []kafka.Mes
 
 	errMsgs = make([]kafka.Message, 0, len(msgs))
 
-	for i, msg := range msgs {
+	select {
+	case <-p.ctx.Done():
+		errMsgs = append(errMsgs, msgs...)
+		return errMsgs, errors.New("producer is already closed")
+	default:
+		p.chanMutex.Lock()
 		select {
-		case <-p.ctx.Done():
-			for j := i; j < len(msgs); j++ {
-				errMsgs = append(errMsgs, msgs[j])
-			}
-			return errMsgs, errors.New("producer is already closed")
-		case p.receiverCh <- msg:
+		case p.receiverCh <- msgs:
 		default:
-			errMsgs = append(errMsgs, msg)
-			continue
+			errMsgs = append(errMsgs, msgs...)
 		}
+		p.chanMutex.Unlock()
 	}
 
 	if len(errMsgs) > 0 {
@@ -183,8 +185,9 @@ func (p *ConcurrencekafkaProducer) process() (bool, error) {
 // 結束條件就是完全消耗完receiverCh
 func (p *ConcurrencekafkaProducer) produce() {
 	defer func() {
+		log.Printf("kafka producer end consumeing msg...")
 		p.isStopped <- struct{}{}
-		p.stop(time.Second*10, false)
+		p.stop(time.Second*15, false)
 	}()
 
 	var (
@@ -196,16 +199,15 @@ func (p *ConcurrencekafkaProducer) produce() {
 	ticker := time.NewTicker(p.cfg.CommitInterval)
 	defer ticker.Stop()
 
-normalProcess:
 	for msg := range p.receiverCh {
 		select {
 		case <-ticker.C:
-			p.buffer = append(p.buffer, msg)
+			p.buffer = append(p.buffer, msg...)
 			if len(p.buffer) > 0 {
 				isfatal, err = p.process()
 				if err != nil {
 					if isfatal {
-						break normalProcess
+						return
 					} else {
 						p.batchHandleFailed(err)
 					}
@@ -215,12 +217,12 @@ normalProcess:
 				p.buffer = p.buffer[:0]
 			}
 		default:
-			p.buffer = append(p.buffer, msg)
+			p.buffer = append(p.buffer, msg...)
 			if len(p.buffer) >= p.cfg.BatchSize {
 				isfatal, err = p.process()
 				if err != nil {
 					if isfatal {
-						break normalProcess
+						return
 					} else {
 						p.batchHandleFailed(err)
 					}
@@ -237,26 +239,6 @@ normalProcess:
 			}
 		}
 	}
-
-	if isfatal {
-		for msg := range p.receiverCh {
-			p.buffer = append(p.buffer, msg)
-		}
-		p.batchHandleFailed(err)
-	} else {
-		//receiverCh已經處理完， 處理殘留於buffer資料
-		if len(p.buffer) > 0 {
-			_, err := p.process()
-			if err != nil {
-				p.batchHandleFailed(err)
-			} else {
-				p.batchHandleSuccess()
-			}
-		}
-	}
-	p.buffer = p.buffer[:0]
-
-	log.Printf("kafka producer end consumeing msg...")
 }
 
 // 發送buffer裡面所有訊息給kafka
@@ -290,8 +272,10 @@ func (p *ConcurrencekafkaProducer) stop(waitTIme time.Duration, needWait bool) (
 	if !p.isRunning.CompareAndSwap(true, false) {
 		return nil
 	}
-	p.canceled()        //拒絕接收新資料
+	p.canceled() //拒絕接收新資料
+	p.chanMutex.Lock()
 	close(p.receiverCh) // 等待內部處理完所有receiverCh 內部剩餘資料
+	p.chanMutex.Unlock()
 
 	if needWait {
 		select {
@@ -300,6 +284,22 @@ func (p *ConcurrencekafkaProducer) stop(waitTIme time.Duration, needWait bool) (
 		case <-p.isStopped:
 		}
 	}
+
+	//用於遇到fatal error時，結尾處理剩餘在receiverCh的資料
+	//結尾處理剩餘在receiverCh的資料
+	for msg := range p.receiverCh {
+		p.buffer = append(p.buffer, msg...)
+	}
+	if len(p.buffer) > 0 {
+		_, err := p.process()
+		if err != nil {
+			p.batchHandleFailed(err)
+		} else {
+			p.batchHandleSuccess()
+		}
+		p.buffer = p.buffer[:0]
+	}
+
 	kafka_err := p.writer.Close()
 	err = errors.Join(err, kafka_err)
 	return
