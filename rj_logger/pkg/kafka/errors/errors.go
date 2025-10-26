@@ -103,7 +103,7 @@ func IsConnectionError(err error) bool {
 // true 表示可重試, false 表示不可重試
 func IsTemporaryError(err error) bool {
 	if err == nil {
-		return false
+		return true
 	}
 
 	// 如果是需要重置連接的錯誤，不在這裡處理
