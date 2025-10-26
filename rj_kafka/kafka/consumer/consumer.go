@@ -286,6 +286,7 @@ func (b *Consumer) stop() {
 	close(b.resultChan)
 	close(b.dlq)
 	b.handleResultWg.Wait()
+	b.reader.Close()
 	close(b.isStopped)
 }
 
