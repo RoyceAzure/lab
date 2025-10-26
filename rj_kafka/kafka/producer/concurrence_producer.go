@@ -19,7 +19,7 @@ import (
 // 生產者會寫入到固定topic，由config.Config設置
 type Producer interface {
 	// Produce sends messages to Kafka
-	Produce(ctx context.Context, msgs []kafka.Message) error
+	Produce(ctx context.Context, msgs []kafka.Message) ([]kafka.Message, error)
 	// Close closes the producer
 	Close(time.Duration) error
 }
