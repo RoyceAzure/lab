@@ -111,6 +111,7 @@ func TestBasicConsumer(t *testing.T) {
 						return m, nil
 					}).AnyTimes()
 				reader.EXPECT().CommitMessages(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+				reader.EXPECT().Close().Return(nil).AnyTimes()
 			},
 			generateTestMsg: generateTestMessage,
 			setUpProcesserMock: func(m *mock_consumer.MockProcesser) {
@@ -142,6 +143,7 @@ func TestBasicConsumer(t *testing.T) {
 						return m, nil
 					}).AnyTimes()
 				reader.EXPECT().CommitMessages(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+				reader.EXPECT().Close().Return(nil).AnyTimes()
 			},
 			generateTestMsg: generateTestMessage,
 			setUpProcesserMock: func(m *mock_consumer.MockProcesser) {
@@ -172,6 +174,7 @@ func TestBasicConsumer(t *testing.T) {
 						return m, nil
 					}).AnyTimes()
 				reader.EXPECT().CommitMessages(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+				reader.EXPECT().Close().Return(nil).AnyTimes()
 			},
 			generateTestMsg: generateTestMessage,
 			setUpProcesserMock: func(m *mock_consumer.MockProcesser) {
@@ -202,6 +205,7 @@ func TestBasicConsumer(t *testing.T) {
 						return m, nil
 					}).AnyTimes()
 				reader.EXPECT().CommitMessages(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+				reader.EXPECT().Close().Return(nil).AnyTimes()
 			},
 			generateTestMsg: generateTestMessage,
 			setUpProcesserMock: func(m *mock_consumer.MockProcesser) {
@@ -238,6 +242,7 @@ func TestBasicConsumer(t *testing.T) {
 						return m, nil
 					}).AnyTimes()
 				reader.EXPECT().CommitMessages(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+				reader.EXPECT().Close().Return(nil).AnyTimes()
 			},
 			generateTestMsg: generateTestMessage,
 			setUpProcesserMock: func(m *mock_consumer.MockProcesser) {
@@ -274,6 +279,7 @@ func TestBasicConsumer(t *testing.T) {
 						return m, nil
 					}).AnyTimes()
 				reader.EXPECT().CommitMessages(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+				reader.EXPECT().Close().Return(nil).AnyTimes()
 			},
 			generateTestMsg: generateTestMessage,
 			setUpProcesserMock: func(m *mock_consumer.MockProcesser) {
@@ -311,6 +317,7 @@ func TestBasicConsumer(t *testing.T) {
 						return m, nil
 					}).AnyTimes()
 				reader.EXPECT().CommitMessages(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+				reader.EXPECT().Close().Return(nil).AnyTimes()
 			},
 			generateTestMsg: generateTestMessage,
 			setUpProcesserMock: func(m *mock_consumer.MockProcesser) {
@@ -341,6 +348,7 @@ func TestBasicConsumer(t *testing.T) {
 						return m, nil
 					}).AnyTimes()
 				reader.EXPECT().CommitMessages(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+				reader.EXPECT().Close().Return(nil).AnyTimes()
 			},
 			generateTestMsg: generateTestMessage,
 			setUpProcesserMock: func(m *mock_consumer.MockProcesser) {
@@ -449,6 +457,7 @@ func TestConsumerMutiStop(t *testing.T) {
 						return m, nil
 					}).AnyTimes()
 				reader.EXPECT().CommitMessages(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+				reader.EXPECT().Close().Return(nil).AnyTimes()
 			},
 			generateTestMsg: generateTestMessage,
 			setUpProcesserMock: func(m *mock_consumer.MockProcesser) {

@@ -101,8 +101,8 @@ func (p *ConcurrencekafkaProducer) Start() {
 		return
 	}
 	p.ctx, p.canceled = context.WithCancel(context.Background())
-	p.buffer = make([]message.Message, 0, p.cfg.BatchSize+500)
-	p.receiverCh = make(chan []message.Message, 1000)
+	p.buffer = make([]message.Message, 0, p.cfg.BatchSize+512)
+	p.receiverCh = make(chan []message.Message, p.cfg.BatchSize/2)
 	p.isStopped = make(chan struct{})
 	go p.produce()
 }
@@ -203,7 +203,7 @@ func (p *ConcurrencekafkaProducer) produce() {
 		select {
 		case <-ticker.C:
 			p.buffer = append(p.buffer, msg...)
-			if len(p.buffer) > 0 {
+			if len(p.buffer) >= p.cfg.BatchSize {
 				isfatal, err = p.process()
 				if err != nil {
 					if isfatal {
@@ -218,25 +218,6 @@ func (p *ConcurrencekafkaProducer) produce() {
 			}
 		default:
 			p.buffer = append(p.buffer, msg...)
-			if len(p.buffer) >= p.cfg.BatchSize {
-				isfatal, err = p.process()
-				if err != nil {
-					if isfatal {
-						return
-					} else {
-						p.batchHandleFailed(err)
-					}
-				} else {
-					p.batchHandleSuccess()
-				}
-				p.buffer = p.buffer[:0]
-				//清空ticker
-				ticker.Reset(p.cfg.CommitInterval)
-				select {
-				case <-ticker.C:
-				default:
-				}
-			}
 		}
 	}
 }

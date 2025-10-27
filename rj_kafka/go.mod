@@ -23,4 +23,5 @@ require (
 	github.com/olivere/elastic/v7 v7.0.32 // indirect
 	github.com/pierrec/lz4/v4 v4.1.15 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	golang.org/x/sync v0.14.0
 )

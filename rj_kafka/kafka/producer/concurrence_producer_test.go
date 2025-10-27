@@ -388,7 +388,6 @@ func TestProducerAdbvance(t *testing.T) {
 					start = end
 					end += buffer
 				}
-
 			}()
 
 			go func() {

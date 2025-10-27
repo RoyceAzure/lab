@@ -118,7 +118,7 @@ func (b *Consumer) process(ctx context.Context,
 	out chan<- kafka.Message,
 	dlq chan<- ConsuemError) {
 
-	ticker := time.NewTicker(100 * time.Millisecond)
+	ticker := time.NewTicker(b.cfg.CommitInterval)
 	batch := make([]kafka.Message, 0, b.cfg.BatchSize)
 
 	processMsg := func() {
@@ -150,6 +150,11 @@ func (b *Consumer) process(ctx context.Context,
 			batch = append(batch, msg)
 		case <-ticker.C:
 			processMsg()
+			ticker.Reset(b.cfg.CommitInterval)
+			select {
+			case <-ticker.C:
+			default:
+			}
 		}
 	}
 }
@@ -246,10 +251,16 @@ func (b *Consumer) handleResult(in <-chan kafka.Message) {
 				commitMsgs()
 				return
 			}
-			b.handlerSuccessfunc(msg)
 			toCommit = append(toCommit, msg)
+			b.handlerSuccessfunc(msg)
+
 		case <-ticker.C:
 			commitMsgs()
+			ticker.Reset(b.cfg.CommitInterval)
+			select {
+			case <-ticker.C:
+			default:
+			}
 		}
 	}
 }

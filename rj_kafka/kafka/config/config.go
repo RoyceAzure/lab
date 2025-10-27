@@ -59,7 +59,7 @@ func DefaultConfig() *Config {
 		MinBytes:       10e3, // 10KB
 		MaxBytes:       10e6, // 10MB
 		MaxWait:        time.Second,
-		CommitInterval: 100 * time.Millisecond,
+		CommitInterval: 500 * time.Millisecond,
 		BatchSize:      1000,
 		Timeout:        time.Second,
 		RequiredAcks:   -1, // 等待所有副本確認
