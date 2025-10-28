@@ -152,12 +152,8 @@ func setUpWriter() (*kafka.Writer, error) {
 		BatchTimeout: cfg.CommitInterval + time.Millisecond*100,
 		RequiredAcks: kafka.RequiredAcks(cfg.RequiredAcks),
 	}
-	err := w.WriteMessages(context.Background(), kafka.Message{
-		Key:   []byte("test"),
-		Value: []byte("test"),
-	})
 
-	return &w, err
+	return &w, nil
 }
 
 func setUpReaders(n int) ([]*kafka.Reader, error) {
@@ -198,28 +194,25 @@ func setUpElDao() (*elsearch.ElSearchDao, error) {
 }
 
 func TestProducerAdbvance(t *testing.T) {
-	successMsgsChan, failedMsgsChan := make(chan kafka.Message, 10000), make(chan kafka.Message, 10000)
-	successMsgs := make([]kafka.Message, 0, 10000)
-	failedMsgs := make([]kafka.Message, 0, 10000)
-
-	var successDeposeCount, failedDeposeCount atomic.Uint32
-	successDeposeCount.Store(0)
-	failedDeposeCount.Store(0)
 
 	testCases := []struct {
-		name               string
-		testMsgs           int
-		generateTestMsg    func(int) []message.Message
-		earilyStop         time.Duration
-		handlerSuccessfunc func(successMsgsChan chan kafka.Message) func(kafka.Message)
-		handlerErrorfunc   func(failedMsgsChan chan kafka.Message) func(consumer.ConsuemError)
+		name                  string
+		each_publish_num      int
+		each_publish_duration time.Duration
+		testMsgs              int
+		generateTestMsg       func(int) []message.Message
+		earilyStop            time.Duration
+		handlerSuccessfunc    func(successMsgsChan chan kafka.Message, successDeposeCount *atomic.Uint32) func(kafka.Message)
+		handlerErrorfunc      func(failedMsgsChan chan kafka.Message, failedDeposeCount *atomic.Uint32) func(consumer.ConsuemError)
 	}{
 		{
-			name:            "all send, all consume",
-			testMsgs:        100000,
-			generateTestMsg: generateTestMessage,
-			earilyStop:      time.Second * 20,
-			handlerSuccessfunc: func(successMsgsChan chan kafka.Message) func(kafka.Message) {
+			name:                  "all send, all consume",
+			testMsgs:              100000,
+			each_publish_num:      100,
+			each_publish_duration: 10 * time.Millisecond,
+			generateTestMsg:       generateTestMessage,
+			earilyStop:            time.Second * 20,
+			handlerSuccessfunc: func(successMsgsChan chan kafka.Message, successDeposeCount *atomic.Uint32) func(kafka.Message) {
 				return func(msg kafka.Message) {
 					select {
 					case successMsgsChan <- msg:
@@ -228,7 +221,33 @@ func TestProducerAdbvance(t *testing.T) {
 					}
 				}
 			},
-			handlerErrorfunc: func(failedMsgsChan chan kafka.Message) func(consumer.ConsuemError) {
+			handlerErrorfunc: func(failedMsgsChan chan kafka.Message, failedDeposeCount *atomic.Uint32) func(consumer.ConsuemError) {
+				return func(err consumer.ConsuemError) {
+					select {
+					case failedMsgsChan <- err.Message:
+					default:
+						failedDeposeCount.Add(1)
+					}
+				}
+			},
+		},
+		{
+			name:                  "all send, all consume, low publish num and duration",
+			testMsgs:              100000,
+			each_publish_num:      1,
+			each_publish_duration: 10 * time.Nanosecond,
+			generateTestMsg:       generateTestMessage,
+			earilyStop:            time.Second * 20,
+			handlerSuccessfunc: func(successMsgsChan chan kafka.Message, successDeposeCount *atomic.Uint32) func(kafka.Message) {
+				return func(msg kafka.Message) {
+					select {
+					case successMsgsChan <- msg:
+					default:
+						successDeposeCount.Add(1)
+					}
+				}
+			},
+			handlerErrorfunc: func(failedMsgsChan chan kafka.Message, failedDeposeCount *atomic.Uint32) func(consumer.ConsuemError) {
 				return func(err consumer.ConsuemError) {
 					select {
 					case failedMsgsChan <- err.Message:
@@ -248,6 +267,14 @@ func TestProducerAdbvance(t *testing.T) {
 			closeEnv := setupTestEnvironment(t)
 			defer closeEnv()
 
+			successMsgsChan, failedMsgsChan := make(chan kafka.Message, 10000), make(chan kafka.Message, 10000)
+			successMsgs := make([]kafka.Message, 0, 10000)
+			failedMsgs := make([]kafka.Message, 0, 10000)
+
+			var successDeposeCount, failedDeposeCount atomic.Uint32
+			successDeposeCount.Store(0)
+			failedDeposeCount.Store(0)
+
 			writer, err := setUpWriter()
 			require.NoError(t, err)
 
@@ -262,8 +289,8 @@ func TestProducerAdbvance(t *testing.T) {
 
 			concumser, err := setUpConsumers(cfg.Partition,
 				reader, processer,
-				tc.handlerSuccessfunc(successMsgsChan),
-				tc.handlerErrorfunc(failedMsgsChan),
+				tc.handlerSuccessfunc(successMsgsChan, &successDeposeCount),
+				tc.handlerErrorfunc(failedMsgsChan, &failedDeposeCount),
 			)
 			require.NoError(t, err)
 
@@ -303,12 +330,12 @@ func TestProducerAdbvance(t *testing.T) {
 					err = producer.Close(time.Second * 30)
 					testEnd <- struct{}{}
 				}()
-				buffer := 500
+				buffer := tc.each_publish_num
 				start := 0
 				end := start + buffer
 				l := len(testMsgs)
 
-				ticker := time.NewTicker(10 * time.Millisecond)
+				ticker := time.NewTicker(tc.each_publish_duration)
 				defer ticker.Stop()
 				for range ticker.C {
 					if end > l {
