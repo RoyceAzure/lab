@@ -41,14 +41,14 @@ type Consumer struct {
 	isStopped          chan struct{}
 }
 
-type option func(*Consumer)
+type Option func(*Consumer)
 
-func SetHandlerSuccessfunc(f func(kafka.Message)) option {
+func SetHandlerSuccessfunc(f func(kafka.Message)) Option {
 	return func(n *Consumer) {
 		n.handlerSuccessfunc = f
 	}
 }
-func SetHandlerFailedfunc(f func(ConsuemError)) option {
+func SetHandlerFailedfunc(f func(ConsuemError)) Option {
 	return func(n *Consumer) {
 		n.handlerErrorfunc = f
 	}
@@ -57,7 +57,7 @@ func SetHandlerFailedfunc(f func(ConsuemError)) option {
 // 不使用pipline，用內簽方式達到一體成形的處理消息
 // readMsg -> processer處理消息 -> 根據結果決定commit
 // 批次讀取是在conn這一層
-func NewConsumer(reader KafkaReader, p Processer, cfg config.Config, ops ...option) *Consumer {
+func NewConsumer(reader KafkaReader, p Processer, cfg config.Config, ops ...Option) *Consumer {
 	if cfg.WorkerNum < 1 {
 		cfg.WorkerNum = 1
 	}

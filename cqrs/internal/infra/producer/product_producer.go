@@ -33,7 +33,11 @@ func (p *ProductProducer) AddNewProduct(ctx context.Context, product *model.Prod
 		return err
 	}
 
-	return p.producer.Produce(ctx, []message.Message{msg})
+	_, err = p.producer.Produce(ctx, []message.Message{msg})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (p *ProductProducer) UpdateProductStock(ctx context.Context, product *model.Product) error {
@@ -42,7 +46,11 @@ func (p *ProductProducer) UpdateProductStock(ctx context.Context, product *model
 		return err
 	}
 
-	return p.producer.Produce(ctx, []message.Message{msg})
+	_, err = p.producer.Produce(ctx, []message.Message{msg})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (p *ProductProducer) UpdateProductReserved(ctx context.Context, product *model.Product, timestamp int64) error {
@@ -51,7 +59,11 @@ func (p *ProductProducer) UpdateProductReserved(ctx context.Context, product *mo
 		return err
 	}
 
-	return p.producer.Produce(ctx, []message.Message{msg})
+	_, err = p.producer.Produce(ctx, []message.Message{msg})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (p *ProductProducer) UpdateProduct(ctx context.Context, product *model.Product) error {
@@ -60,7 +72,11 @@ func (p *ProductProducer) UpdateProduct(ctx context.Context, product *model.Prod
 		return err
 	}
 
-	return p.producer.Produce(ctx, []message.Message{msg})
+	_, err = p.producer.Produce(ctx, []message.Message{msg})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (p *ProductProducer) DeleteProduct(ctx context.Context, productID string) error {
@@ -69,7 +85,11 @@ func (p *ProductProducer) DeleteProduct(ctx context.Context, productID string) e
 		return err
 	}
 
-	return p.producer.Produce(ctx, []message.Message{msg})
+	_, err = p.producer.Produce(ctx, []message.Message{msg})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (p *ProductProducer) convertToMessage(cmd ProductCommand, product *model.Product, timestamp int64) (message.Message, error) {

@@ -36,7 +36,11 @@ func (c *CartCommandProducer) ProduceCartCreatedCommand(ctx context.Context, use
 		return err
 	}
 
-	return c.producer.Produce(ctx, []message.Message{msg})
+	_, err = c.producer.Produce(ctx, []message.Message{msg})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (c *CartCommandProducer) ProduceCartUpdatedCommand(ctx context.Context, userID int, details []cmd_model.CartUpdatedDetial) error {
@@ -47,7 +51,11 @@ func (c *CartCommandProducer) ProduceCartUpdatedCommand(ctx context.Context, use
 		return err
 	}
 
-	return c.producer.Produce(ctx, []message.Message{msg})
+	_, err = c.producer.Produce(ctx, []message.Message{msg})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (c *CartCommandProducer) ProduceCartDeletedCommand(ctx context.Context, userID int) error {
@@ -58,7 +66,11 @@ func (c *CartCommandProducer) ProduceCartDeletedCommand(ctx context.Context, use
 		return err
 	}
 
-	return c.producer.Produce(ctx, []message.Message{msg})
+	_, err = c.producer.Produce(ctx, []message.Message{msg})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (c *CartCommandProducer) ProduceCartConfirmedCommand(ctx context.Context, userID int) error {
@@ -69,7 +81,11 @@ func (c *CartCommandProducer) ProduceCartConfirmedCommand(ctx context.Context, u
 		return err
 	}
 
-	return c.producer.Produce(ctx, []message.Message{msg})
+	_, err = c.producer.Produce(ctx, []message.Message{msg})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (c *CartCommandProducer) convertToMessage(userID int, cmd cmd_model.Command) (message.Message, error) {

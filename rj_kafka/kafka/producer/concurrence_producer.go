@@ -29,14 +29,14 @@ type ProducerError struct {
 	Err     error
 }
 
-type option func(*ConcurrencekafkaProducer)
+type Option func(*ConcurrencekafkaProducer)
 
-func SetHandlerSuccessfunc(f func(message.Message)) option {
+func SetHandlerSuccessfunc(f func(message.Message)) Option {
 	return func(n *ConcurrencekafkaProducer) {
 		n.handlerSuccessfunc = f
 	}
 }
-func SetHandlerFailedfunc(f func(ProducerError)) option {
+func SetHandlerFailedfunc(f func(ProducerError)) Option {
 	return func(n *ConcurrencekafkaProducer) {
 		n.handlerErrorfunc = f
 	}
@@ -59,7 +59,7 @@ type ConcurrencekafkaProducer struct {
 }
 
 // 目前默認是同步模式，會block到所有消息都寫入
-func NewConcurrencekafkaProducer(w Writer, cfg config.Config, opts ...option) (*ConcurrencekafkaProducer, error) {
+func NewConcurrencekafkaProducer(w Writer, cfg config.Config, opts ...Option) (*ConcurrencekafkaProducer, error) {
 	if len(cfg.Brokers) == 0 {
 		return nil, ka_err.ErrInvalidateParameter
 	}
