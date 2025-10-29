@@ -194,7 +194,6 @@ func setUpElDao() (*elsearch.ElSearchDao, error) {
 }
 
 func TestProducerAdbvance(t *testing.T) {
-
 	testCases := []struct {
 		name                  string
 		each_publish_num      int

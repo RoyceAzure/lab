@@ -255,7 +255,9 @@ func (b *Consumer) handleResult(in <-chan kafka.Message) {
 				return
 			}
 			toCommit = append(toCommit, msg)
-			b.handlerSuccessfunc(msg)
+			if b.handlerSuccessfunc != nil {
+				b.handlerSuccessfunc(msg)
+			}
 
 		case <-ticker.C:
 			commitMsgs()
@@ -270,7 +272,9 @@ func (b *Consumer) handleResult(in <-chan kafka.Message) {
 
 func (b *Consumer) handleError(dlq <-chan model.ConsuemError) {
 	for err := range dlq {
-		b.handlerErrorfunc(err)
+		if b.handlerErrorfunc != nil {
+			b.handlerErrorfunc(err)
+		}
 	}
 }
 
