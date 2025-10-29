@@ -10,8 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RoyceAzure/lab/rj_kafka/kafka/config"
-	mock_consumer "github.com/RoyceAzure/lab/rj_kafka/kafka/consumer/mock"
+	"github.com/RoyceAzure/lab/rj_kafka/pkg/config"
+	mock_consumer "github.com/RoyceAzure/lab/rj_kafka/pkg/consumer/mock"
+	"github.com/RoyceAzure/lab/rj_kafka/pkg/model"
 	"github.com/golang/mock/gomock"
 	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/require"
@@ -95,7 +96,7 @@ func TestBasicConsumer(t *testing.T) {
 		generateTestMsg    func(int) []kafka.Message
 		setUpProcesserMock func(m *mock_consumer.MockProcesser)
 		handlerSuccessfunc func(kafka.Message)
-		handlerErrorfunc   func(ConsuemError)
+		handlerErrorfunc   func(model.ConsuemError)
 	}{
 		{
 			name:     "all pass, reader EOF end",
@@ -122,7 +123,7 @@ func TestBasicConsumer(t *testing.T) {
 				defer successMu.Unlock()
 				successMsgs = append(successMsgs, msg)
 			},
-			handlerErrorfunc: func(err ConsuemError) {
+			handlerErrorfunc: func(err model.ConsuemError) {
 				errorMu.Lock()
 				defer errorMu.Unlock()
 				failedMsgs = append(failedMsgs, err.Message)
@@ -154,7 +155,7 @@ func TestBasicConsumer(t *testing.T) {
 				defer successMu.Unlock()
 				successMsgs = append(successMsgs, msg)
 			},
-			handlerErrorfunc: func(err ConsuemError) {
+			handlerErrorfunc: func(err model.ConsuemError) {
 				errorMu.Lock()
 				defer errorMu.Unlock()
 				failedMsgs = append(failedMsgs, err.Message)
@@ -185,7 +186,7 @@ func TestBasicConsumer(t *testing.T) {
 				defer successMu.Unlock()
 				successMsgs = append(successMsgs, msg)
 			},
-			handlerErrorfunc: func(err ConsuemError) {
+			handlerErrorfunc: func(err model.ConsuemError) {
 				errorMu.Lock()
 				defer errorMu.Unlock()
 				failedMsgs = append(failedMsgs, err.Message)
@@ -216,7 +217,7 @@ func TestBasicConsumer(t *testing.T) {
 				defer successMu.Unlock()
 				successMsgs = append(successMsgs, msg)
 			},
-			handlerErrorfunc: func(err ConsuemError) {
+			handlerErrorfunc: func(err model.ConsuemError) {
 				errorMu.Lock()
 				defer errorMu.Unlock()
 				failedMsgs = append(failedMsgs, err.Message)
@@ -253,7 +254,7 @@ func TestBasicConsumer(t *testing.T) {
 				defer successMu.Unlock()
 				successMsgs = append(successMsgs, msg)
 			},
-			handlerErrorfunc: func(err ConsuemError) {
+			handlerErrorfunc: func(err model.ConsuemError) {
 				errorMu.Lock()
 				defer errorMu.Unlock()
 				failedMsgs = append(failedMsgs, err.Message)
@@ -290,7 +291,7 @@ func TestBasicConsumer(t *testing.T) {
 				defer successMu.Unlock()
 				successMsgs = append(successMsgs, msg)
 			},
-			handlerErrorfunc: func(err ConsuemError) {
+			handlerErrorfunc: func(err model.ConsuemError) {
 				errorMu.Lock()
 				defer errorMu.Unlock()
 				failedMsgs = append(failedMsgs, err.Message)
@@ -328,7 +329,7 @@ func TestBasicConsumer(t *testing.T) {
 				defer successMu.Unlock()
 				successMsgs = append(successMsgs, msg)
 			},
-			handlerErrorfunc: func(err ConsuemError) {
+			handlerErrorfunc: func(err model.ConsuemError) {
 				errorMu.Lock()
 				defer errorMu.Unlock()
 				failedMsgs = append(failedMsgs, err.Message)
@@ -366,7 +367,7 @@ func TestBasicConsumer(t *testing.T) {
 				defer successMu.Unlock()
 				successMsgs = append(successMsgs, msg)
 			},
-			handlerErrorfunc: func(err ConsuemError) {
+			handlerErrorfunc: func(err model.ConsuemError) {
 				errorMu.Lock()
 				defer errorMu.Unlock()
 				failedMsgs = append(failedMsgs, err.Message)
@@ -440,7 +441,7 @@ func TestConsumerMutiStop(t *testing.T) {
 		generateTestMsg    func(int) []kafka.Message
 		setUpProcesserMock func(m *mock_consumer.MockProcesser)
 		handlerSuccessfunc func(kafka.Message)
-		handlerErrorfunc   func(ConsuemError)
+		handlerErrorfunc   func(model.ConsuemError)
 	}{
 		{
 			name:       "all pass, reader EOF end, early stop",
@@ -468,7 +469,7 @@ func TestConsumerMutiStop(t *testing.T) {
 				defer successMu.Unlock()
 				successMsgs = append(successMsgs, msg)
 			},
-			handlerErrorfunc: func(err ConsuemError) {
+			handlerErrorfunc: func(err model.ConsuemError) {
 				errorMu.Lock()
 				defer errorMu.Unlock()
 				failedMsgs = append(failedMsgs, err.Message)

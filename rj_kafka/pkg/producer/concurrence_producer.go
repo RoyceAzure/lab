@@ -9,9 +9,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/RoyceAzure/lab/rj_kafka/kafka/config"
-	ka_err "github.com/RoyceAzure/lab/rj_kafka/kafka/errors"
-	"github.com/RoyceAzure/lab/rj_kafka/kafka/message"
+	"github.com/RoyceAzure/lab/rj_kafka/pkg/config"
+	ka_err "github.com/RoyceAzure/lab/rj_kafka/pkg/errors"
+	"github.com/RoyceAzure/lab/rj_kafka/pkg/model"
 	"github.com/segmentio/kafka-go"
 )
 
@@ -19,24 +19,19 @@ import (
 // 生產者會寫入到固定topic，由config.Config設置
 type Producer interface {
 	// Produce sends messages to Kafka
-	Produce(ctx context.Context, msgs []message.Message) ([]message.Message, error)
+	Produce(ctx context.Context, msgs []model.Message) ([]model.Message, error)
 	// Close closes the producer
 	Close(time.Duration) error
 }
 
-type ProducerError struct {
-	Message message.Message
-	Err     error
-}
-
 type Option func(*ConcurrencekafkaProducer)
 
-func SetHandlerSuccessfunc(f func(message.Message)) Option {
+func SetHandlerSuccessfunc(f func(model.Message)) Option {
 	return func(n *ConcurrencekafkaProducer) {
 		n.handlerSuccessfunc = f
 	}
 }
-func SetHandlerFailedfunc(f func(ProducerError)) Option {
+func SetHandlerFailedfunc(f func(model.ProducerError)) Option {
 	return func(n *ConcurrencekafkaProducer) {
 		n.handlerErrorfunc = f
 	}
@@ -46,14 +41,14 @@ func SetHandlerFailedfunc(f func(ProducerError)) Option {
 // 希望是併發安全，所有Logger調用同一個ConcurrencekafkaProducer
 type ConcurrencekafkaProducer struct {
 	isRunning          atomic.Bool //結束旗標
-	buffer             []message.Message
+	buffer             []model.Message
 	cfg                config.Config
 	ctx                context.Context
 	canceled           context.CancelFunc
 	writer             Writer
-	handlerSuccessfunc func(message.Message)
-	handlerErrorfunc   func(ProducerError)
-	receiverCh         chan []message.Message
+	handlerSuccessfunc func(model.Message) //使用自訂義結構，可方便日後擴展
+	handlerErrorfunc   func(model.ProducerError)
+	receiverCh         chan []model.Message
 	isStopped          chan struct{} //內部程序是否已經停止旗標
 	chanMutex          sync.Mutex    //確保發送訊息瞬間，chan沒有正在關閉
 }
@@ -93,6 +88,13 @@ func NewConcurrencekafkaProducer(w Writer, cfg config.Config, opts ...Option) (*
 		opt(ka)
 	}
 
+	if cfg.ProducerHandlerSuccessfunc != nil {
+		ka.handlerSuccessfunc = cfg.ProducerHandlerSuccessfunc
+	}
+	if cfg.ProducerHandlerErrorfunc != nil {
+		ka.handlerErrorfunc = cfg.ProducerHandlerErrorfunc
+	}
+
 	return ka, nil
 }
 
@@ -101,15 +103,15 @@ func (p *ConcurrencekafkaProducer) Start() {
 		return
 	}
 	p.ctx, p.canceled = context.WithCancel(context.Background())
-	p.buffer = make([]message.Message, 0, p.cfg.BatchSize+512)
-	p.receiverCh = make(chan []message.Message, p.cfg.BatchSize/2)
+	p.buffer = make([]model.Message, 0, p.cfg.BatchSize+512)
+	p.receiverCh = make(chan []model.Message, p.cfg.BatchSize/2)
 	p.isStopped = make(chan struct{})
 	go p.produce()
 }
 
 // Produce implements the Producer interface
 // 非同步，若buffer已滿，放棄傳遞並回傳該訊息
-func (p *ConcurrencekafkaProducer) Produce(ctx context.Context, msgs []message.Message) (errMsgs []message.Message, err error) {
+func (p *ConcurrencekafkaProducer) Produce(ctx context.Context, msgs []model.Message) (errMsgs []model.Message, err error) {
 	if !p.isRunning.Load() {
 		return msgs, ka_err.ErrClientClosed
 	}
@@ -117,7 +119,7 @@ func (p *ConcurrencekafkaProducer) Produce(ctx context.Context, msgs []message.M
 		return nil, nil
 	}
 
-	errMsgs = make([]message.Message, 0, len(msgs))
+	errMsgs = make([]model.Message, 0, len(msgs))
 
 	select {
 	case <-p.ctx.Done():
@@ -153,7 +155,7 @@ func (p *ConcurrencekafkaProducer) batchHandleSuccess() {
 func (p *ConcurrencekafkaProducer) batchHandleFailed(err error) {
 	if p.handlerErrorfunc != nil {
 		for _, msg := range p.buffer {
-			p.handlerErrorfunc(ProducerError{
+			p.handlerErrorfunc(model.ProducerError{
 				Message: msg,
 				Err:     err,
 			})

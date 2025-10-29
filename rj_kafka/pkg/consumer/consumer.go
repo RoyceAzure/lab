@@ -11,14 +11,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/RoyceAzure/lab/rj_kafka/kafka/config"
+	"github.com/RoyceAzure/lab/rj_kafka/pkg/config"
+	"github.com/RoyceAzure/lab/rj_kafka/pkg/model"
 	"github.com/segmentio/kafka-go"
 )
-
-type ConsuemError struct {
-	Message kafka.Message
-	Err     error
-}
 
 type Consumer struct {
 	isRunning      atomic.Bool
@@ -35,9 +31,9 @@ type Consumer struct {
 
 	processChan        chan kafka.Message
 	resultChan         chan kafka.Message
-	dlq                chan ConsuemError
-	handlerSuccessfunc func(kafka.Message)
-	handlerErrorfunc   func(ConsuemError)
+	dlq                chan model.ConsuemError
+	handlerSuccessfunc func(kafka.Message) //直接使用kafka.Message避免消費者處理資料時要處理轉換
+	handlerErrorfunc   func(model.ConsuemError)
 	isStopped          chan struct{}
 }
 
@@ -48,7 +44,7 @@ func SetHandlerSuccessfunc(f func(kafka.Message)) Option {
 		n.handlerSuccessfunc = f
 	}
 }
-func SetHandlerFailedfunc(f func(ConsuemError)) Option {
+func SetHandlerFailedfunc(f func(model.ConsuemError)) Option {
 	return func(n *Consumer) {
 		n.handlerErrorfunc = f
 	}
@@ -69,12 +65,19 @@ func NewConsumer(reader KafkaReader, p Processer, cfg config.Config, ops ...Opti
 		processer:     p,
 		resultChan:    make(chan kafka.Message, cfg.BatchSize),
 		processChan:   make(chan kafka.Message, cfg.BatchSize),
-		dlq:           make(chan ConsuemError, cfg.BatchSize),
+		dlq:           make(chan model.ConsuemError, cfg.BatchSize),
 		isStopped:     make(chan struct{}),
 	}
 
 	for _, opt := range ops {
 		opt(c)
+	}
+
+	if cfg.ConsumerHandlerSuccessfunc != nil {
+		c.handlerSuccessfunc = cfg.ConsumerHandlerSuccessfunc
+	}
+	if cfg.ConsumerHandlerErrorfunc != nil {
+		c.handlerErrorfunc = cfg.ConsumerHandlerErrorfunc
 	}
 
 	return c
@@ -116,7 +119,7 @@ func (b *Consumer) startConsumerLoop() {
 func (b *Consumer) process(ctx context.Context,
 	in <-chan kafka.Message,
 	out chan<- kafka.Message,
-	dlq chan<- ConsuemError) {
+	dlq chan<- model.ConsuemError) {
 
 	ticker := time.NewTicker(b.cfg.CommitInterval)
 	batch := make([]kafka.Message, 0, b.cfg.BatchSize)
@@ -126,7 +129,7 @@ func (b *Consumer) process(ctx context.Context,
 			err := b.processer.Process(ctx, batch)
 			if err != nil {
 				for _, msg := range batch {
-					dlq <- ConsuemError{
+					dlq <- model.ConsuemError{
 						Message: msg,
 						Err:     err,
 					}
@@ -265,7 +268,7 @@ func (b *Consumer) handleResult(in <-chan kafka.Message) {
 	}
 }
 
-func (b *Consumer) handleError(dlq <-chan ConsuemError) {
+func (b *Consumer) handleError(dlq <-chan model.ConsuemError) {
 	for err := range dlq {
 		b.handlerErrorfunc(err)
 	}
@@ -340,6 +343,6 @@ func DefaultHandleSucessFunc(msg kafka.Message) {
 	log.Printf("consume message success :%v", msg)
 }
 
-func DefaulthandlerErrorfunc(msg ConsuemError) {
+func DefaulthandlerErrorfunc(msg model.ConsuemError) {
 	log.Printf("consume message failed :%v, err : %s", msg.Message, msg.Err)
 }

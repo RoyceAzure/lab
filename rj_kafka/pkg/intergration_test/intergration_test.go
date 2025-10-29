@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RoyceAzure/lab/rj_kafka/kafka/admin"
-	"github.com/RoyceAzure/lab/rj_kafka/kafka/config"
-	"github.com/RoyceAzure/lab/rj_kafka/kafka/consumer"
-	"github.com/RoyceAzure/lab/rj_kafka/kafka/message"
-	"github.com/RoyceAzure/lab/rj_kafka/kafka/producer"
+	"github.com/RoyceAzure/lab/rj_kafka/pkg/admin"
+	"github.com/RoyceAzure/lab/rj_kafka/pkg/config"
+	"github.com/RoyceAzure/lab/rj_kafka/pkg/consumer"
+	"github.com/RoyceAzure/lab/rj_kafka/pkg/model"
+	"github.com/RoyceAzure/lab/rj_kafka/pkg/producer"
 	"github.com/RoyceAzure/rj/infra/elsearch"
 	"github.com/golang/mock/gomock"
 	"github.com/segmentio/kafka-go"
@@ -38,8 +38,8 @@ type TestMsg struct {
 	Message string `json:"message"`
 }
 
-func generateTestMessage(n int) []message.Message {
-	t := make([]message.Message, 0, n)
+func generateTestMessage(n int) []model.Message {
+	t := make([]model.Message, 0, n)
 	for i := 0; i < n; i++ {
 		buf := make([]byte, 4)
 		binary.BigEndian.PutUint32(buf, uint32(i))
@@ -52,7 +52,7 @@ func generateTestMessage(n int) []message.Message {
 		if err != nil {
 			panic(err)
 		}
-		t = append(t, message.Message{
+		t = append(t, model.Message{
 			Key:   buf,
 			Value: b,
 		})
@@ -60,7 +60,7 @@ func generateTestMessage(n int) []message.Message {
 	return t
 }
 
-func handleResult(allTestMsgs, sendFailedMsgs []message.Message, consumSuccess, consumFailed []kafka.Message) []map[string]struct{} {
+func handleResult(allTestMsgs, sendFailedMsgs []model.Message, consumSuccess, consumFailed []kafka.Message) []map[string]struct{} {
 	allRes := make([]map[string]struct{}, 2)
 	allTestMsgsM := make(map[string]struct{}, len(allTestMsgs))
 	for _, v := range allTestMsgs {
@@ -169,7 +169,7 @@ func setUpReaders(n int) ([]*kafka.Reader, error) {
 	return readers, nil
 }
 
-func setUpConsumers(n int, reader []*kafka.Reader, processer *consumer.KafkaElProcesser, handlerSuccessfunc func(kafka.Message), handlerErrorfunc func(consumer.ConsuemError)) ([]*consumer.Consumer, error) {
+func setUpConsumers(n int, reader []*kafka.Reader, processer *consumer.KafkaElProcesser, handlerSuccessfunc func(kafka.Message), handlerErrorfunc func(model.ConsuemError)) ([]*consumer.Consumer, error) {
 	consumers := make([]*consumer.Consumer, 0, n)
 	for i := 0; i < n; i++ {
 		consumers = append(consumers, consumer.NewConsumer(reader[i], processer, *cfg,
@@ -200,10 +200,10 @@ func TestProducerAdbvance(t *testing.T) {
 		each_publish_num      int
 		each_publish_duration time.Duration
 		testMsgs              int
-		generateTestMsg       func(int) []message.Message
+		generateTestMsg       func(int) []model.Message
 		earilyStop            time.Duration
 		handlerSuccessfunc    func(successMsgsChan chan kafka.Message, successDeposeCount *atomic.Uint32) func(kafka.Message)
-		handlerErrorfunc      func(failedMsgsChan chan kafka.Message, failedDeposeCount *atomic.Uint32) func(consumer.ConsuemError)
+		handlerErrorfunc      func(failedMsgsChan chan kafka.Message, failedDeposeCount *atomic.Uint32) func(model.ConsuemError)
 	}{
 		{
 			name:                  "all send, all consume",
@@ -221,8 +221,8 @@ func TestProducerAdbvance(t *testing.T) {
 					}
 				}
 			},
-			handlerErrorfunc: func(failedMsgsChan chan kafka.Message, failedDeposeCount *atomic.Uint32) func(consumer.ConsuemError) {
-				return func(err consumer.ConsuemError) {
+			handlerErrorfunc: func(failedMsgsChan chan kafka.Message, failedDeposeCount *atomic.Uint32) func(model.ConsuemError) {
+				return func(err model.ConsuemError) {
 					select {
 					case failedMsgsChan <- err.Message:
 					default:
@@ -247,8 +247,8 @@ func TestProducerAdbvance(t *testing.T) {
 					}
 				}
 			},
-			handlerErrorfunc: func(failedMsgsChan chan kafka.Message, failedDeposeCount *atomic.Uint32) func(consumer.ConsuemError) {
-				return func(err consumer.ConsuemError) {
+			handlerErrorfunc: func(failedMsgsChan chan kafka.Message, failedDeposeCount *atomic.Uint32) func(model.ConsuemError) {
+				return func(err model.ConsuemError) {
 					select {
 					case failedMsgsChan <- err.Message:
 					default:
@@ -305,7 +305,7 @@ func TestProducerAdbvance(t *testing.T) {
 			time.Sleep(time.Second * 10) // 等待kafka相關初始化
 
 			testMsgs := tc.generateTestMsg(tc.testMsgs)
-			sendFailedMsg := make([]message.Message, 0, tc.testMsgs)
+			sendFailedMsg := make([]model.Message, 0, tc.testMsgs)
 
 			testEnd := make(chan struct{})
 

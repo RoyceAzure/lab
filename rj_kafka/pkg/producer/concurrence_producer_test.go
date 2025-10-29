@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RoyceAzure/lab/rj_kafka/kafka/config"
-	"github.com/RoyceAzure/lab/rj_kafka/kafka/message"
-	mock_producer "github.com/RoyceAzure/lab/rj_kafka/kafka/producer/mock"
+	"github.com/RoyceAzure/lab/rj_kafka/pkg/config"
+	"github.com/RoyceAzure/lab/rj_kafka/pkg/model"
+	mock_producer "github.com/RoyceAzure/lab/rj_kafka/pkg/producer/mock"
 	"github.com/golang/mock/gomock"
 	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/require"
@@ -22,8 +22,8 @@ type TestMsg struct {
 	Message string `json:"message"`
 }
 
-func generateTestMessage(n int) []message.Message {
-	t := make([]message.Message, 0, n)
+func generateTestMessage(n int) []model.Message {
+	t := make([]model.Message, 0, n)
 	for i := 0; i < n; i++ {
 		buf := make([]byte, 4)
 		binary.BigEndian.PutUint32(buf, uint32(i))
@@ -37,7 +37,7 @@ func generateTestMessage(n int) []message.Message {
 		if err != nil {
 			panic(err)
 		}
-		t = append(t, message.Message{
+		t = append(t, model.Message{
 			Key:   buf,
 			Value: b,
 		})
@@ -45,14 +45,14 @@ func generateTestMessage(n int) []message.Message {
 	return t
 }
 
-func generateBadTestMessage(n int) []message.Message {
-	t := make([]message.Message, 0, n)
+func generateBadTestMessage(n int) []model.Message {
+	t := make([]model.Message, 0, n)
 	for i := 0; i < n; i++ {
 		buf := make([]byte, 4, 4)
 		binary.BigEndian.PutUint32(buf, uint32(i))
 		testMsg := fmt.Sprintf("this is test message %d", i)
 
-		t = append(t, message.Message{
+		t = append(t, model.Message{
 			Key:   buf,
 			Value: []byte(testMsg),
 		})
@@ -60,7 +60,7 @@ func generateBadTestMessage(n int) []message.Message {
 	return t
 }
 
-func handleResult(successMsgs, failedMsgs []message.Message, writerSuccess, writerFailed []kafka.Message) []map[string]struct{} {
+func handleResult(successMsgs, failedMsgs []model.Message, writerSuccess, writerFailed []kafka.Message) []map[string]struct{} {
 	allRes := make([]map[string]struct{}, 4)
 	successM := make(map[string]struct{}, len(successMsgs))
 	for _, v := range successMsgs {
@@ -88,7 +88,7 @@ func handleResult(successMsgs, failedMsgs []message.Message, writerSuccess, writ
 	return allRes
 }
 
-func handleAllRes(allTest, writerSuccess, writerFailed, sendFailed []message.Message) []map[string]struct{} {
+func handleAllRes(allTest, writerSuccess, writerFailed, sendFailed []model.Message) []map[string]struct{} {
 	allRes := make([]map[string]struct{}, 2)
 	allTestM := make(map[string]struct{}, len(allTest))
 	for _, v := range allTest {
@@ -120,9 +120,9 @@ func TestBasicProducer(t *testing.T) {
 		testMsgs           int
 		earilyStop         time.Duration
 		setUpWriterMock    func(*[]kafka.Message, *[]kafka.Message, *mock_producer.MockWriter)
-		generateTestMsg    func(int) []message.Message
-		handlerSuccessfunc func(*[]message.Message) func(m message.Message)
-		handlerErrorfunc   func(*[]message.Message) func(ProducerError)
+		generateTestMsg    func(int) []model.Message
+		handlerSuccessfunc func(*[]model.Message) func(m model.Message)
+		handlerErrorfunc   func(*[]model.Message) func(model.ProducerError)
 	}{
 		{
 			name:     "all pass, writer EOF end",
@@ -145,13 +145,13 @@ func TestBasicProducer(t *testing.T) {
 				writer.EXPECT().Close().Return(nil).AnyTimes()
 			},
 			generateTestMsg: generateTestMessage,
-			handlerSuccessfunc: func(successMsgs *[]message.Message) func(m message.Message) {
-				return func(m message.Message) {
+			handlerSuccessfunc: func(successMsgs *[]model.Message) func(m model.Message) {
+				return func(m model.Message) {
 					*successMsgs = append(*successMsgs, m)
 				}
 			},
-			handlerErrorfunc: func(errMsgs *[]message.Message) func(ProducerError) {
-				return func(err ProducerError) {
+			handlerErrorfunc: func(errMsgs *[]model.Message) func(model.ProducerError) {
+				return func(err model.ProducerError) {
 					*errMsgs = append(*errMsgs, err.Message)
 				}
 			},
@@ -177,13 +177,13 @@ func TestBasicProducer(t *testing.T) {
 				writer.EXPECT().Close().Return(nil).AnyTimes()
 			},
 			generateTestMsg: generateTestMessage,
-			handlerSuccessfunc: func(successMsgs *[]message.Message) func(m message.Message) {
-				return func(m message.Message) {
+			handlerSuccessfunc: func(successMsgs *[]model.Message) func(m model.Message) {
+				return func(m model.Message) {
 					*successMsgs = append(*successMsgs, m)
 				}
 			},
-			handlerErrorfunc: func(errMsgs *[]message.Message) func(ProducerError) {
-				return func(err ProducerError) {
+			handlerErrorfunc: func(errMsgs *[]model.Message) func(model.ProducerError) {
+				return func(err model.ProducerError) {
 					*errMsgs = append(*errMsgs, err.Message)
 				}
 			},
@@ -209,13 +209,13 @@ func TestBasicProducer(t *testing.T) {
 				writer.EXPECT().Close().Return(nil).AnyTimes()
 			},
 			generateTestMsg: generateTestMessage,
-			handlerSuccessfunc: func(successMsgs *[]message.Message) func(m message.Message) {
-				return func(m message.Message) {
+			handlerSuccessfunc: func(successMsgs *[]model.Message) func(m model.Message) {
+				return func(m model.Message) {
 					*successMsgs = append(*successMsgs, m)
 				}
 			},
-			handlerErrorfunc: func(errMsgs *[]message.Message) func(ProducerError) {
-				return func(err ProducerError) {
+			handlerErrorfunc: func(errMsgs *[]model.Message) func(model.ProducerError) {
+				return func(err model.ProducerError) {
 					*errMsgs = append(*errMsgs, err.Message)
 				}
 			},
@@ -226,9 +226,9 @@ func TestBasicProducer(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
-			successMsgs, failedMsgs := make([]message.Message, 0, tc.testMsgs), make([]message.Message, 0, tc.testMsgs)
+			successMsgs, failedMsgs := make([]model.Message, 0, tc.testMsgs), make([]model.Message, 0, tc.testMsgs)
 			writerSuccess, writerFailed := make([]kafka.Message, 0, tc.testMsgs), make([]kafka.Message, 0, tc.testMsgs)
-			sendFailedMsg := make([]message.Message, 0, tc.testMsgs)
+			sendFailedMsg := make([]model.Message, 0, tc.testMsgs)
 			mock_writer := mock_producer.NewMockWriter(ctrl)
 			tc.setUpWriterMock(&writerSuccess, &writerFailed, mock_writer)
 
@@ -298,9 +298,9 @@ func TestProducerAdbvance(t *testing.T) {
 		testMsgs           int
 		earilyStop         time.Duration
 		setUpWriterMock    func(*[]kafka.Message, *[]kafka.Message, *mock_producer.MockWriter)
-		generateTestMsg    func(int) []message.Message
-		handlerSuccessfunc func(*[]message.Message) func(m message.Message)
-		handlerErrorfunc   func(*[]message.Message) func(ProducerError)
+		generateTestMsg    func(int) []model.Message
+		handlerSuccessfunc func(*[]model.Message) func(m model.Message)
+		handlerErrorfunc   func(*[]model.Message) func(model.ProducerError)
 	}{
 		{
 			name:     "early stop, producer is already closed",
@@ -323,13 +323,13 @@ func TestProducerAdbvance(t *testing.T) {
 				writer.EXPECT().Close().Return(nil).AnyTimes()
 			},
 			generateTestMsg: generateTestMessage,
-			handlerSuccessfunc: func(successMsgs *[]message.Message) func(m message.Message) {
-				return func(m message.Message) {
+			handlerSuccessfunc: func(successMsgs *[]model.Message) func(m model.Message) {
+				return func(m model.Message) {
 					*successMsgs = append(*successMsgs, m)
 				}
 			},
-			handlerErrorfunc: func(errMsgs *[]message.Message) func(ProducerError) {
-				return func(err ProducerError) {
+			handlerErrorfunc: func(errMsgs *[]model.Message) func(model.ProducerError) {
+				return func(err model.ProducerError) {
 					*errMsgs = append(*errMsgs, err.Message)
 				}
 			},
@@ -340,9 +340,9 @@ func TestProducerAdbvance(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
-			successMsgs, failedMsgs := make([]message.Message, 0, tc.testMsgs), make([]message.Message, 0, tc.testMsgs)
+			successMsgs, failedMsgs := make([]model.Message, 0, tc.testMsgs), make([]model.Message, 0, tc.testMsgs)
 			writerSuccess, writerFailed := make([]kafka.Message, 0, tc.testMsgs), make([]kafka.Message, 0, tc.testMsgs)
-			sendFailedMsg := make([]message.Message, 0, tc.testMsgs)
+			sendFailedMsg := make([]model.Message, 0, tc.testMsgs)
 			mock_writer := mock_producer.NewMockWriter(ctrl)
 			tc.setUpWriterMock(&writerSuccess, &writerFailed, mock_writer)
 

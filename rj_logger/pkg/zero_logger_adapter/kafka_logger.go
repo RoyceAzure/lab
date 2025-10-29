@@ -7,9 +7,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	lab_config "github.com/RoyceAzure/lab/rj_kafka/kafka/config"
-	"github.com/RoyceAzure/lab/rj_kafka/kafka/message"
-	"github.com/RoyceAzure/lab/rj_kafka/kafka/producer"
+	lab_config "github.com/RoyceAzure/lab/rj_kafka/pkg/config"
+	"github.com/RoyceAzure/lab/rj_kafka/pkg/message"
+	"github.com/RoyceAzure/lab/rj_kafka/pkg/producer"
 	"github.com/segmentio/kafka-go"
 )
 

@@ -3,6 +3,7 @@ package config
 import (
 	"time"
 
+	"github.com/RoyceAzure/lab/rj_kafka/pkg/model"
 	"github.com/segmentio/kafka-go"
 )
 
@@ -14,11 +15,15 @@ type Config struct {
 	Topic   string
 
 	// 消費者配置
-	ConsumerGroup string
-	Partition     int
+	ConsumerGroup              string
+	Partition                  int
+	ConsumerHandlerSuccessfunc func(kafka.Message)
+	ConsumerHandlerErrorfunc   func(model.ConsuemError)
 
 	// 生產者配置
-	RequiredAcks int
+	RequiredAcks               int
+	ProducerHandlerSuccessfunc func(model.Message) //使用自訂義結構，可方便日後擴展
+	ProducerHandlerErrorfunc   func(model.ProducerError)
 
 	// 通用配置
 	Timeout        time.Duration
