@@ -8,7 +8,7 @@ import (
 	"time"
 
 	lab_config "github.com/RoyceAzure/lab/rj_kafka/pkg/config"
-	"github.com/RoyceAzure/lab/rj_kafka/pkg/message"
+	"github.com/RoyceAzure/lab/rj_kafka/pkg/model"
 	"github.com/RoyceAzure/lab/rj_kafka/pkg/producer"
 	"github.com/segmentio/kafka-go"
 )
@@ -53,7 +53,7 @@ func (kw *KafkaLogger) Write(p []byte) (n int, err error) {
 	kw.logId.Add(int64(1))
 	kbuf := make([]byte, 0, 8)
 	binary.BigEndian.PutUint64(kbuf, uint64(kw.logId.Load()))
-	_, err = kw.w.Produce(context.Background(), []message.Message{
+	_, err = kw.w.Produce(context.Background(), []model.Message{
 		{
 			Key:   kbuf,
 			Value: p,

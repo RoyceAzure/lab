@@ -201,25 +201,36 @@ func (p *ConcurrencekafkaProducer) produce() {
 	ticker := time.NewTicker(p.cfg.CommitInterval)
 	defer ticker.Stop()
 
+	processMsg := func(limit int) {
+		if len(p.buffer) >= limit {
+			isfatal, err = p.process()
+			if err != nil {
+				if isfatal {
+					return
+				} else {
+					p.batchHandleFailed(err)
+				}
+			} else {
+				p.batchHandleSuccess()
+			}
+			//清空buffer
+			p.buffer = p.buffer[:0]
+			//發送完訊息後，重置ticker
+			ticker.Reset(p.cfg.CommitInterval)
+			select {
+			case <-ticker.C:
+			default:
+			}
+		}
+	}
+
 	for msg := range p.receiverCh {
+		p.buffer = append(p.buffer, msg...)
 		select {
 		case <-ticker.C:
-			p.buffer = append(p.buffer, msg...)
-			if len(p.buffer) >= p.cfg.BatchSize {
-				isfatal, err = p.process()
-				if err != nil {
-					if isfatal {
-						return
-					} else {
-						p.batchHandleFailed(err)
-					}
-				} else {
-					p.batchHandleSuccess()
-				}
-				p.buffer = p.buffer[:0]
-			}
+			processMsg(1)
 		default:
-			p.buffer = append(p.buffer, msg...)
+			processMsg(int(float64(p.cfg.BatchSize) * 0.8))
 		}
 	}
 }

@@ -359,7 +359,7 @@ func TestProducerAdbvance(t *testing.T) {
 
 			time.Sleep(time.Second * 20)
 			for _, consumer := range concumser {
-				consumer.Close(time.Second * 20)
+				go consumer.Close(time.Second * 10)
 			}
 
 			for _, consumer := range concumser {
