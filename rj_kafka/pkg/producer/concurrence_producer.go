@@ -43,14 +43,12 @@ type ConcurrencekafkaProducer struct {
 	isRunning          atomic.Bool //結束旗標
 	buffer             []model.Message
 	cfg                config.Config
-	ctx                context.Context
-	canceled           context.CancelFunc
 	writer             Writer
 	handlerSuccessfunc func(model.Message) //使用自訂義結構，可方便日後擴展
 	handlerErrorfunc   func(model.ProducerError)
 	receiverCh         chan []model.Message
 	isStopped          chan struct{} //內部程序是否已經停止旗標
-	chanMutex          sync.Mutex    //確保發送訊息瞬間，chan沒有正在關閉
+	chanMutex          sync.RWMutex
 }
 
 // 目前默認是同步模式，會block到所有消息都寫入
@@ -102,7 +100,6 @@ func (p *ConcurrencekafkaProducer) Start() {
 	if !p.isRunning.CompareAndSwap(false, true) {
 		return
 	}
-	p.ctx, p.canceled = context.WithCancel(context.Background())
 	p.buffer = make([]model.Message, 0, p.cfg.BatchSize+512)
 	p.receiverCh = make(chan []model.Message, p.cfg.BatchSize/2)
 	p.isStopped = make(chan struct{})
@@ -112,6 +109,8 @@ func (p *ConcurrencekafkaProducer) Start() {
 // Produce implements the Producer interface
 // 非同步，若buffer已滿，放棄傳遞並回傳該訊息
 func (p *ConcurrencekafkaProducer) Produce(ctx context.Context, msgs []model.Message) (errMsgs []model.Message, err error) {
+	p.chanMutex.RLock()
+	defer p.chanMutex.RUnlock()
 	if !p.isRunning.Load() {
 		return msgs, ka_err.ErrClientClosed
 	}
@@ -122,17 +121,9 @@ func (p *ConcurrencekafkaProducer) Produce(ctx context.Context, msgs []model.Mes
 	errMsgs = make([]model.Message, 0, len(msgs))
 
 	select {
-	case <-p.ctx.Done():
-		errMsgs = append(errMsgs, msgs...)
-		return errMsgs, errors.New("producer is already closed")
+	case p.receiverCh <- msgs:
 	default:
-		p.chanMutex.Lock()
-		select {
-		case p.receiverCh <- msgs:
-		default:
-			errMsgs = append(errMsgs, msgs...)
-		}
-		p.chanMutex.Unlock()
+		errMsgs = append(errMsgs, msgs...)
 	}
 
 	if len(errMsgs) > 0 {
@@ -188,7 +179,7 @@ func (p *ConcurrencekafkaProducer) process() (bool, error) {
 func (p *ConcurrencekafkaProducer) produce() {
 	defer func() {
 		log.Printf("kafka producer end consumeing msg...")
-		p.isStopped <- struct{}{}
+		close(p.isStopped)
 		p.stop(time.Second*15, false)
 	}()
 
@@ -201,12 +192,12 @@ func (p *ConcurrencekafkaProducer) produce() {
 	ticker := time.NewTicker(p.cfg.CommitInterval)
 	defer ticker.Stop()
 
-	processMsg := func(limit int) {
+	processMsg := func(limit int) (bool, error) {
 		if len(p.buffer) >= limit {
 			isfatal, err = p.process()
 			if err != nil {
 				if isfatal {
-					return
+					return true, err
 				} else {
 					p.batchHandleFailed(err)
 				}
@@ -222,17 +213,39 @@ func (p *ConcurrencekafkaProducer) produce() {
 			default:
 			}
 		}
+		return false, nil
 	}
 
 	for msg := range p.receiverCh {
 		p.buffer = append(p.buffer, msg...)
 		select {
 		case <-ticker.C:
-			processMsg(1)
+			isfatal, err = processMsg(1)
 		default:
-			processMsg(int(float64(p.cfg.BatchSize) * 0.8))
+			isfatal, err = processMsg(int(float64(p.cfg.BatchSize) * 0.8))
+		}
+
+		if isfatal {
+			log.Printf("kafka producer process fatal error: %s", err.Error())
+			p.stop(time.Nanosecond, false)
+			//目的是要觸發關閉chans
+			//才能針對channel剩餘的資料進行處理
+			for msg := range p.receiverCh {
+				p.buffer = append(p.buffer, msg...)
+			}
+			if len(p.buffer) > 0 {
+				if err != nil {
+					p.batchHandleFailed(err)
+				} else {
+					p.batchHandleSuccess()
+				}
+				p.buffer = p.buffer[:0]
+			}
+			break
 		}
 	}
+	//處理剩餘buffer內訊息
+	processMsg(1)
 }
 
 // 發送buffer裡面所有訊息給kafka
@@ -261,21 +274,27 @@ func (p *ConcurrencekafkaProducer) sendMsgs() (bool, error) {
 	return false, nil
 }
 
-// Block until close is finished
+// waitTIme (time.Duration) : 給予producer處理剩餘訊息的時間，若超過時間，則會印出錯誤
 func (p *ConcurrencekafkaProducer) Close(waitTIme time.Duration) error {
 	return p.stop(waitTIme, true)
 }
 
+func (p *ConcurrencekafkaProducer) C() chan struct{} {
+	return p.isStopped
+}
+
 // parm:
-// needWait (bool) :　若為內部呼叫，使用false, 外部呼叫使用true
+// needWait (bool) :　是否等待內部循環結束，若為內部呼叫，使用false, 外部呼叫使用true
 func (p *ConcurrencekafkaProducer) stop(waitTIme time.Duration, needWait bool) (err error) {
 	if !p.isRunning.CompareAndSwap(true, false) {
 		return nil
 	}
-	p.canceled() //拒絕接收新資料
+
 	p.chanMutex.Lock()
-	close(p.receiverCh) // 等待內部處理完所有receiverCh 內部剩餘資料
+	close(p.receiverCh)
 	p.chanMutex.Unlock()
+	//必須由發送者來關閉channel,避免競爭，所以此處於canceled()後再次發送一條消息
+	//讓Produce接收到ctx.Done()，關閉channel
 
 	if needWait {
 		select {
@@ -285,22 +304,10 @@ func (p *ConcurrencekafkaProducer) stop(waitTIme time.Duration, needWait bool) (
 		}
 	}
 
-	//用於遇到fatal error時，結尾處理剩餘在receiverCh的資料
-	//結尾處理剩餘在receiverCh的資料
-	for msg := range p.receiverCh {
-		p.buffer = append(p.buffer, msg...)
-	}
-	if len(p.buffer) > 0 {
-		_, err := p.process()
-		if err != nil {
-			p.batchHandleFailed(err)
-		} else {
-			p.batchHandleSuccess()
-		}
-		p.buffer = p.buffer[:0]
-	}
-
 	kafka_err := p.writer.Close()
 	err = errors.Join(err, kafka_err)
+	if err != nil {
+		log.Printf("kafka producer stop error: %s", err.Error())
+	}
 	return
 }

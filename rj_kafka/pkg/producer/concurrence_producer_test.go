@@ -277,6 +277,7 @@ func TestBasicProducer(t *testing.T) {
 			}()
 
 			<-testEnd
+			<-kafkaWriter.C()
 			if err != nil {
 				t.Logf("error: %s", err.Error())
 			}
