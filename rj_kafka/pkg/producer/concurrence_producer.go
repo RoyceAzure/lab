@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -12,6 +12,7 @@ import (
 	"github.com/RoyceAzure/lab/rj_kafka/pkg/config"
 	ka_err "github.com/RoyceAzure/lab/rj_kafka/pkg/errors"
 	"github.com/RoyceAzure/lab/rj_kafka/pkg/model"
+	"github.com/rs/zerolog"
 	"github.com/segmentio/kafka-go"
 )
 
@@ -49,6 +50,7 @@ type ConcurrencekafkaProducer struct {
 	receiverCh         chan []model.Message
 	isStopped          chan struct{} //內部程序是否已經停止旗標
 	chanMutex          sync.RWMutex
+	logger             *zerolog.Logger
 }
 
 // 目前默認是同步模式，會block到所有消息都寫入
@@ -77,9 +79,11 @@ func NewConcurrencekafkaProducer(w Writer, cfg config.Config, opts ...Option) (*
 	// 	}),
 	// }
 
+	logger := zerolog.New(os.Stdout).Level(zerolog.Level(cfg.LogLevel)).With().Timestamp().Logger()
 	ka := &ConcurrencekafkaProducer{
 		writer: w,
 		cfg:    cfg,
+		logger: &logger,
 	}
 
 	for _, opt := range opts {
@@ -163,7 +167,7 @@ func (p *ConcurrencekafkaProducer) process() (bool, error) {
 		if err == nil {
 			return false, nil
 		}
-		log.Printf("kafka producer error : %s", err.Error())
+		p.logger.Error().Msgf("kafka producer error : %s", err.Error())
 		if isfatal {
 			return true, err
 		}
@@ -178,7 +182,7 @@ func (p *ConcurrencekafkaProducer) process() (bool, error) {
 // 結束條件就是完全消耗完receiverCh
 func (p *ConcurrencekafkaProducer) produce() {
 	defer func() {
-		log.Printf("kafka producer end consumeing msg...")
+		p.logger.Info().Msg("kafka producer end consumeing msg...")
 		close(p.isStopped)
 		p.stop(time.Second*15, false)
 	}()
@@ -188,12 +192,13 @@ func (p *ConcurrencekafkaProducer) produce() {
 		isfatal bool
 	)
 
-	log.Printf("kafka producer start consumeing msg...")
+	p.logger.Info().Msg("kafka producer start consumeing msg...")
 	ticker := time.NewTicker(p.cfg.CommitInterval)
 	defer ticker.Stop()
 
 	processMsg := func(limit int) (bool, error) {
 		if len(p.buffer) >= limit {
+			p.logger.Debug().Msgf("kafka producer process msg by limit: %d msgs, buffer count: %d", limit, len(p.buffer))
 			isfatal, err = p.process()
 			if err != nil {
 				if isfatal {
@@ -226,7 +231,7 @@ func (p *ConcurrencekafkaProducer) produce() {
 		}
 
 		if isfatal {
-			log.Printf("kafka producer process fatal error: %s", err.Error())
+			p.logger.Error().Msgf("kafka producer process fatal error: %s", err.Error())
 			p.stop(time.Nanosecond, false)
 			//目的是要觸發關閉chans
 			//才能針對channel剩餘的資料進行處理
@@ -245,6 +250,7 @@ func (p *ConcurrencekafkaProducer) produce() {
 		}
 	}
 	//處理剩餘buffer內訊息
+	p.logger.Debug().Msgf("kafka producer process remaining msg: %d msgs", len(p.buffer))
 	processMsg(1)
 }
 
@@ -258,7 +264,7 @@ func (p *ConcurrencekafkaProducer) sendMsgs() (bool, error) {
 	defer cancle()
 
 	//若是同步模式，會block到所有消息都寫入
-	log.Printf("kafka producer send msgs: %d msgs", len(p.buffer))
+	p.logger.Debug().Msgf("kafka producer send msgs: %d msgs", len(p.buffer))
 
 	msgs := make([]kafka.Message, 0, len(p.buffer))
 	for _, msg := range p.buffer {
@@ -293,8 +299,6 @@ func (p *ConcurrencekafkaProducer) stop(waitTIme time.Duration, needWait bool) (
 	p.chanMutex.Lock()
 	close(p.receiverCh)
 	p.chanMutex.Unlock()
-	//必須由發送者來關閉channel,避免競爭，所以此處於canceled()後再次發送一條消息
-	//讓Produce接收到ctx.Done()，關閉channel
 
 	if needWait {
 		select {
@@ -307,7 +311,7 @@ func (p *ConcurrencekafkaProducer) stop(waitTIme time.Duration, needWait bool) (
 	kafka_err := p.writer.Close()
 	err = errors.Join(err, kafka_err)
 	if err != nil {
-		log.Printf("kafka producer stop error: %s", err.Error())
+		p.logger.Error().Msgf("kafka producer stop error: %s", err.Error())
 	}
 	return
 }

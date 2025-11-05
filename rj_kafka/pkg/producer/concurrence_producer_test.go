@@ -244,6 +244,7 @@ func TestBasicProducer(t *testing.T) {
 				SetHandlerSuccessfunc(tc.handlerSuccessfunc(&successMsgs)),
 				SetHandlerFailedfunc(tc.handlerErrorfunc(&failedMsgs)),
 			)
+			cfg.LogLevel = config.DebugLevel
 			require.Nil(t, err)
 			kafkaWriter.Start()
 
@@ -354,6 +355,7 @@ func TestProducerAdbvance(t *testing.T) {
 			cfg.Topic = "test_topic"
 			cfg.BatchSize = 2000
 			cfg.CommitInterval = 100 * time.Millisecond
+			cfg.LogLevel = config.DebugLevel
 			kafkaWriter, err := NewConcurrencekafkaProducer(mock_writer,
 				*cfg,
 				SetHandlerSuccessfunc(tc.handlerSuccessfunc(&successMsgs)),

@@ -7,6 +7,31 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
+type Level int8
+
+const (
+	// DebugLevel defines debug log level.
+	DebugLevel Level = iota
+	// InfoLevel defines info log level.
+	InfoLevel
+	// WarnLevel defines warn log level.
+	WarnLevel
+	// ErrorLevel defines error log level.
+	ErrorLevel
+	// FatalLevel defines fatal log level.
+	FatalLevel
+	// PanicLevel defines panic log level.
+	PanicLevel
+	// NoLevel defines an absent log level.
+	NoLevel
+	// Disabled disables the logger.
+	Disabled
+
+	// TraceLevel defines trace log level.
+	TraceLevel Level = -1
+	// Values less than TraceLevel are handled as numbers.
+)
+
 // Config represents the configuration for Kafka client
 type Config struct {
 	Async bool
@@ -47,6 +72,9 @@ type Config struct {
 
 	// 分區策略配置
 	Balancer kafka.Balancer // 自定義負載平衡器
+
+	// 日誌配置
+	LogLevel Level
 }
 
 // GetBalancer 取得負載平衡器，如果沒有設定則使用預設的 LeastBytes
@@ -71,6 +99,7 @@ func DefaultConfig() *Config {
 		RetryLimit:     3,
 		RetryDelay:     time.Millisecond * 200,
 		RetryFactor:    2,
+		LogLevel:       InfoLevel,
 	}
 }
 

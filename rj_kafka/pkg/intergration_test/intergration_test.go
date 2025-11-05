@@ -103,6 +103,7 @@ func setupTestEnvironment(t *testing.T) func() {
 	cfg.BatchSize = 10000
 	cfg.RequiredAcks = 0 //writer不需要等待確認
 	cfg.CommitInterval = time.Millisecond * 500
+	cfg.LogLevel = config.DebugLevel
 
 	// 創建 admin client
 	adminClient, err := admin.NewAdmin(testClusterConfig.Cluster.Brokers)
