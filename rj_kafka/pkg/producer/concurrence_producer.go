@@ -104,8 +104,8 @@ func (p *ConcurrencekafkaProducer) Start() {
 	if !p.isRunning.CompareAndSwap(false, true) {
 		return
 	}
-	p.buffer = make([]model.Message, 0, p.cfg.BatchSize+512)
-	p.receiverCh = make(chan []model.Message, p.cfg.BatchSize/2)
+	p.buffer = make([]model.Message, 0, p.cfg.BatchSize*5)
+	p.receiverCh = make(chan []model.Message, p.cfg.BatchSize*5)
 	p.isStopped = make(chan struct{})
 	go p.produce()
 }
@@ -230,7 +230,7 @@ func (p *ConcurrencekafkaProducer) produce() {
 			isfatal, err = processMsg(1)
 		default:
 			p.logger.Debug().Msg("kafka producer triggered by default")
-			isfatal, err = processMsg(int(float64(p.cfg.BatchSize) * 0.8))
+			isfatal, err = processMsg(p.cfg.BatchSize)
 		}
 
 		if isfatal {
