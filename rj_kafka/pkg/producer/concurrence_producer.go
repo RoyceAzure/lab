@@ -225,8 +225,10 @@ func (p *ConcurrencekafkaProducer) produce() {
 		p.buffer = append(p.buffer, msg...)
 		select {
 		case <-ticker.C:
+			p.logger.Debug().Msg("kafka producer triggered by ticker")
 			isfatal, err = processMsg(1)
 		default:
+			p.logger.Debug().Msg("kafka producer triggered by default")
 			isfatal, err = processMsg(int(float64(p.cfg.BatchSize) * 0.8))
 		}
 
