@@ -127,6 +127,7 @@ func (p *ConcurrencekafkaProducer) Produce(ctx context.Context, msgs []model.Mes
 	select {
 	case p.receiverCh <- msgs:
 	default:
+		p.logger.Error().Msg("kafka producer receiverCh is full, some msg will be lost")
 		errMsgs = append(errMsgs, msgs...)
 	}
 
