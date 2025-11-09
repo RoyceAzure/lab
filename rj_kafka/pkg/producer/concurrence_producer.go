@@ -200,17 +200,11 @@ func (p *ConcurrencekafkaProducer) produce() {
 		*p.buffer = append(*p.buffer, msg...)
 		select {
 		case <-ticker.C:
-			if len(*p.buffer) >= 1 {
-				p.logger.Debug().Msg("kafka producer triggered by ticker")
+			if len(*p.buffer) >= p.cfg.BatchSize {
 				go p.processMsg(p.buffer)
 				p.buffer = p.bufferPool.Get()
 			}
 		default:
-			if len(*p.buffer) >= p.cfg.BatchSize {
-				p.logger.Debug().Msg("kafka producer triggered by default")
-				go p.processMsg(p.buffer)
-				p.buffer = p.bufferPool.Get()
-			}
 		}
 	}
 	//正常結束情況 處理剩餘buffer內訊息
