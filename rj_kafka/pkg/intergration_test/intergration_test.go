@@ -50,7 +50,7 @@ func generateTestMessage(n int) []model.Message {
 
 		b, err := json.Marshal(testMsg)
 		if err != nil {
-			panic(err)
+
 		}
 		t = append(t, model.Message{
 			Key:   buf,

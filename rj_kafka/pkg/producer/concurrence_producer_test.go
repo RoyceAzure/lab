@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -119,15 +120,15 @@ func TestBasicProducer(t *testing.T) {
 		name               string
 		testMsgs           int
 		earilyStop         time.Duration
-		setUpWriterMock    func(*[]kafka.Message, *[]kafka.Message, *mock_producer.MockWriter)
+		setUpWriterMock    func(*[]kafka.Message, *[]kafka.Message, *sync.Mutex, *sync.Mutex, *mock_producer.MockWriter)
 		generateTestMsg    func(int) []model.Message
-		handlerSuccessfunc func(*[]model.Message) func(m model.Message)
-		handlerErrorfunc   func(*[]model.Message) func(model.ProducerError)
+		handlerSuccessfunc func(*[]model.Message, *sync.Mutex) func(m model.Message)
+		handlerErrorfunc   func(*[]model.Message, *sync.Mutex) func(model.ProducerError)
 	}{
 		{
 			name:     "all pass, writer EOF end",
 			testMsgs: 1000,
-			setUpWriterMock: func(writerSuccess *[]kafka.Message, writerFailed *[]kafka.Message, writer *mock_producer.MockWriter) {
+			setUpWriterMock: func(writerSuccess *[]kafka.Message, writerFailed *[]kafka.Message, successMu, failedMu *sync.Mutex, writer *mock_producer.MockWriter) {
 				writer.EXPECT().WriteMessages(gomock.Any(), gomock.Any()).DoAndReturn(
 					func(ctx context.Context, msgs ...kafka.Message) error {
 						if len(msgs) == 0 {
@@ -135,9 +136,13 @@ func TestBasicProducer(t *testing.T) {
 						}
 						index := binary.BigEndian.Uint32(msgs[0].Key)
 						if index%3 == 0 {
+							successMu.Lock()
+							defer successMu.Unlock()
 							*writerSuccess = append(*writerSuccess, msgs...)
 							return nil
 						} else {
+							failedMu.Lock()
+							defer failedMu.Unlock()
 							*writerFailed = append(*writerFailed, msgs...)
 							return fmt.Errorf("temporary failed")
 						}
@@ -145,13 +150,17 @@ func TestBasicProducer(t *testing.T) {
 				writer.EXPECT().Close().Return(nil).AnyTimes()
 			},
 			generateTestMsg: generateTestMessage,
-			handlerSuccessfunc: func(successMsgs *[]model.Message) func(m model.Message) {
+			handlerSuccessfunc: func(successMsgs *[]model.Message, mu *sync.Mutex) func(m model.Message) {
 				return func(m model.Message) {
+					mu.Lock()
+					defer mu.Unlock()
 					*successMsgs = append(*successMsgs, m)
 				}
 			},
-			handlerErrorfunc: func(errMsgs *[]model.Message) func(model.ProducerError) {
+			handlerErrorfunc: func(errMsgs *[]model.Message, mu *sync.Mutex) func(model.ProducerError) {
 				return func(err model.ProducerError) {
+					mu.Lock()
+					defer mu.Unlock()
 					*errMsgs = append(*errMsgs, err.Message)
 				}
 			},
@@ -159,7 +168,7 @@ func TestBasicProducer(t *testing.T) {
 		{
 			name:     "big data, all pass, writer EOF end",
 			testMsgs: 20000,
-			setUpWriterMock: func(writerSuccess *[]kafka.Message, writerFailed *[]kafka.Message, writer *mock_producer.MockWriter) {
+			setUpWriterMock: func(writerSuccess *[]kafka.Message, writerFailed *[]kafka.Message, successMu, failedMu *sync.Mutex, writer *mock_producer.MockWriter) {
 				writer.EXPECT().WriteMessages(gomock.Any(), gomock.Any()).DoAndReturn(
 					func(ctx context.Context, msgs ...kafka.Message) error {
 						if len(msgs) == 0 {
@@ -167,9 +176,13 @@ func TestBasicProducer(t *testing.T) {
 						}
 						index := binary.BigEndian.Uint32(msgs[0].Key)
 						if index%3 == 0 {
+							successMu.Lock()
+							defer successMu.Unlock()
 							*writerSuccess = append(*writerSuccess, msgs...)
 							return nil
 						} else {
+							failedMu.Lock()
+							defer failedMu.Unlock()
 							*writerFailed = append(*writerFailed, msgs...)
 							return fmt.Errorf("temporary failed")
 						}
@@ -177,13 +190,17 @@ func TestBasicProducer(t *testing.T) {
 				writer.EXPECT().Close().Return(nil).AnyTimes()
 			},
 			generateTestMsg: generateTestMessage,
-			handlerSuccessfunc: func(successMsgs *[]model.Message) func(m model.Message) {
+			handlerSuccessfunc: func(successMsgs *[]model.Message, mu *sync.Mutex) func(m model.Message) {
 				return func(m model.Message) {
+					mu.Lock()
+					defer mu.Unlock()
 					*successMsgs = append(*successMsgs, m)
 				}
 			},
-			handlerErrorfunc: func(errMsgs *[]model.Message) func(model.ProducerError) {
+			handlerErrorfunc: func(errMsgs *[]model.Message, mu *sync.Mutex) func(model.ProducerError) {
 				return func(err model.ProducerError) {
+					mu.Lock()
+					defer mu.Unlock()
 					*errMsgs = append(*errMsgs, err.Message)
 				}
 			},
@@ -191,7 +208,7 @@ func TestBasicProducer(t *testing.T) {
 		{
 			name:     "with fatal error",
 			testMsgs: 10000,
-			setUpWriterMock: func(writerSuccess *[]kafka.Message, writerFailed *[]kafka.Message, writer *mock_producer.MockWriter) {
+			setUpWriterMock: func(writerSuccess *[]kafka.Message, writerFailed *[]kafka.Message, successMu, failedMu *sync.Mutex, writer *mock_producer.MockWriter) {
 				writer.EXPECT().WriteMessages(gomock.Any(), gomock.Any()).DoAndReturn(
 					func(ctx context.Context, msgs ...kafka.Message) error {
 						if len(msgs) == 0 {
@@ -199,9 +216,13 @@ func TestBasicProducer(t *testing.T) {
 						}
 						index := binary.BigEndian.Uint32(msgs[0].Key)
 						if index >= 4000 {
+							failedMu.Lock()
+							defer failedMu.Unlock()
 							*writerFailed = append(*writerFailed, msgs...)
 							return kafka.TopicAuthorizationFailed
 						} else {
+							successMu.Lock()
+							defer successMu.Unlock()
 							*writerSuccess = append(*writerSuccess, msgs...)
 							return nil
 						}
@@ -209,13 +230,17 @@ func TestBasicProducer(t *testing.T) {
 				writer.EXPECT().Close().Return(nil).AnyTimes()
 			},
 			generateTestMsg: generateTestMessage,
-			handlerSuccessfunc: func(successMsgs *[]model.Message) func(m model.Message) {
+			handlerSuccessfunc: func(successMsgs *[]model.Message, mu *sync.Mutex) func(m model.Message) {
 				return func(m model.Message) {
+					mu.Lock()
+					defer mu.Unlock()
 					*successMsgs = append(*successMsgs, m)
 				}
 			},
-			handlerErrorfunc: func(errMsgs *[]model.Message) func(model.ProducerError) {
+			handlerErrorfunc: func(errMsgs *[]model.Message, mu *sync.Mutex) func(model.ProducerError) {
 				return func(err model.ProducerError) {
+					mu.Lock()
+					defer mu.Unlock()
 					*errMsgs = append(*errMsgs, err.Message)
 				}
 			},
@@ -230,7 +255,9 @@ func TestBasicProducer(t *testing.T) {
 			writerSuccess, writerFailed := make([]kafka.Message, 0, tc.testMsgs), make([]kafka.Message, 0, tc.testMsgs)
 			sendFailedMsg := make([]model.Message, 0, tc.testMsgs)
 			mock_writer := mock_producer.NewMockWriter(ctrl)
-			tc.setUpWriterMock(&writerSuccess, &writerFailed, mock_writer)
+
+			successMuForWriter, failedMuForWriter := sync.Mutex{}, sync.Mutex{}
+			tc.setUpWriterMock(&writerSuccess, &writerFailed, &successMuForWriter, &failedMuForWriter, mock_writer)
 
 			testMsgs := tc.generateTestMsg(tc.testMsgs)
 
@@ -239,10 +266,12 @@ func TestBasicProducer(t *testing.T) {
 			cfg.Topic = "test_topic"
 			cfg.BatchSize = 2000
 			cfg.CommitInterval = 100 * time.Millisecond
+
+			successMuForHandler, failedMuForHandler := sync.Mutex{}, sync.Mutex{}
 			kafkaWriter, err := NewConcurrencekafkaProducer(mock_writer,
 				*cfg,
-				SetHandlerSuccessfunc(tc.handlerSuccessfunc(&successMsgs)),
-				SetHandlerFailedfunc(tc.handlerErrorfunc(&failedMsgs)),
+				SetHandlerSuccessfunc(tc.handlerSuccessfunc(&successMsgs, &successMuForHandler)),
+				SetHandlerFailedfunc(tc.handlerErrorfunc(&failedMsgs, &failedMuForHandler)),
 			)
 			cfg.LogLevel = config.DebugLevel
 			require.Nil(t, err)
@@ -283,6 +312,16 @@ func TestBasicProducer(t *testing.T) {
 				t.Logf("error: %s", err.Error())
 			}
 			require.Nil(t, err)
+
+			time.Sleep(10 * time.Second) // 等待handler fn 處理完後續
+			successMuForHandler.Lock()
+			defer successMuForHandler.Unlock()
+			failedMuForHandler.Lock()
+			defer failedMuForHandler.Unlock()
+			successMuForWriter.Lock()
+			defer successMuForWriter.Unlock()
+			failedMuForWriter.Lock()
+			defer failedMuForWriter.Unlock()
 			eachRes := handleResult(successMsgs, failedMsgs, writerSuccess, writerFailed)
 
 			require.Equal(t, eachRes[0], eachRes[2], "successMsgs and writerSuccess not equal")
@@ -299,15 +338,15 @@ func TestProducerAdbvance(t *testing.T) {
 		name               string
 		testMsgs           int
 		earilyStop         time.Duration
-		setUpWriterMock    func(*[]kafka.Message, *[]kafka.Message, *mock_producer.MockWriter)
+		setUpWriterMock    func(*[]kafka.Message, *[]kafka.Message, *sync.Mutex, *sync.Mutex, *mock_producer.MockWriter)
 		generateTestMsg    func(int) []model.Message
-		handlerSuccessfunc func(*[]model.Message) func(m model.Message)
-		handlerErrorfunc   func(*[]model.Message) func(model.ProducerError)
+		handlerSuccessfunc func(*[]model.Message, *sync.Mutex) func(m model.Message)
+		handlerErrorfunc   func(*[]model.Message, *sync.Mutex) func(model.ProducerError)
 	}{
 		{
 			name:     "early stop, producer is already closed",
 			testMsgs: 10000,
-			setUpWriterMock: func(writerSuccess *[]kafka.Message, writerFailed *[]kafka.Message, writer *mock_producer.MockWriter) {
+			setUpWriterMock: func(writerSuccess *[]kafka.Message, writerFailed *[]kafka.Message, successMu, failedMu *sync.Mutex, writer *mock_producer.MockWriter) {
 				writer.EXPECT().WriteMessages(gomock.Any(), gomock.Any()).DoAndReturn(
 					func(ctx context.Context, msgs ...kafka.Message) error {
 						if len(msgs) == 0 {
@@ -315,9 +354,13 @@ func TestProducerAdbvance(t *testing.T) {
 						}
 						index := binary.BigEndian.Uint32(msgs[0].Key)
 						if index%3 == 0 {
+							successMu.Lock()
+							defer successMu.Unlock()
 							*writerSuccess = append(*writerSuccess, msgs...)
 							return nil
 						} else {
+							failedMu.Lock()
+							defer failedMu.Unlock()
 							*writerFailed = append(*writerFailed, msgs...)
 							return fmt.Errorf("temporary failed")
 						}
@@ -325,13 +368,17 @@ func TestProducerAdbvance(t *testing.T) {
 				writer.EXPECT().Close().Return(nil).AnyTimes()
 			},
 			generateTestMsg: generateTestMessage,
-			handlerSuccessfunc: func(successMsgs *[]model.Message) func(m model.Message) {
+			handlerSuccessfunc: func(successMsgs *[]model.Message, mu *sync.Mutex) func(m model.Message) {
 				return func(m model.Message) {
+					mu.Lock()
+					defer mu.Unlock()
 					*successMsgs = append(*successMsgs, m)
 				}
 			},
-			handlerErrorfunc: func(errMsgs *[]model.Message) func(model.ProducerError) {
+			handlerErrorfunc: func(errMsgs *[]model.Message, mu *sync.Mutex) func(model.ProducerError) {
 				return func(err model.ProducerError) {
+					mu.Lock()
+					defer mu.Unlock()
 					*errMsgs = append(*errMsgs, err.Message)
 				}
 			},
@@ -346,7 +393,8 @@ func TestProducerAdbvance(t *testing.T) {
 			writerSuccess, writerFailed := make([]kafka.Message, 0, tc.testMsgs), make([]kafka.Message, 0, tc.testMsgs)
 			sendFailedMsg := make([]model.Message, 0, tc.testMsgs)
 			mock_writer := mock_producer.NewMockWriter(ctrl)
-			tc.setUpWriterMock(&writerSuccess, &writerFailed, mock_writer)
+			successMuForWriter, failedMuForWriter := sync.Mutex{}, sync.Mutex{}
+			tc.setUpWriterMock(&writerSuccess, &writerFailed, &successMuForWriter, &failedMuForWriter, mock_writer)
 
 			testMsgs := tc.generateTestMsg(tc.testMsgs)
 
@@ -356,10 +404,12 @@ func TestProducerAdbvance(t *testing.T) {
 			cfg.BatchSize = 2000
 			cfg.CommitInterval = 100 * time.Millisecond
 			cfg.LogLevel = config.DebugLevel
+
+			successMuForHandler, failedMuForHandler := sync.Mutex{}, sync.Mutex{}
 			kafkaWriter, err := NewConcurrencekafkaProducer(mock_writer,
 				*cfg,
-				SetHandlerSuccessfunc(tc.handlerSuccessfunc(&successMsgs)),
-				SetHandlerFailedfunc(tc.handlerErrorfunc(&failedMsgs)),
+				SetHandlerSuccessfunc(tc.handlerSuccessfunc(&successMsgs, &successMuForHandler)),
+				SetHandlerFailedfunc(tc.handlerErrorfunc(&failedMsgs, &failedMuForHandler)),
 			)
 			require.Nil(t, err)
 			kafkaWriter.Start()
@@ -403,10 +453,20 @@ func TestProducerAdbvance(t *testing.T) {
 			}()
 
 			<-testEnd
+			<-kafkaWriter.C()
 			if err != nil {
 				t.Logf("error: %s", err.Error())
 			}
 			require.Nil(t, err)
+			time.Sleep(10 * time.Second) // 等待handler fn 處理完後續
+			successMuForHandler.Lock()
+			defer successMuForHandler.Unlock()
+			failedMuForHandler.Lock()
+			defer failedMuForHandler.Unlock()
+			successMuForWriter.Lock()
+			defer successMuForWriter.Unlock()
+			failedMuForWriter.Lock()
+			defer failedMuForWriter.Unlock()
 			eachRes := handleResult(successMsgs, failedMsgs, writerSuccess, writerFailed)
 
 			require.Equal(t, eachRes[0], eachRes[2], "successMsgs and writerSuccess not equal")

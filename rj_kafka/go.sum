@@ -1,5 +1,7 @@
 github.com/RoyceAzure/rj/infra v0.0.0-20251026090421-8b0139dff87e h1:vGzR0n37/YxbMW9Nou8mPybMPPyYghODqMK1EFKUHqU=
 github.com/RoyceAzure/rj/infra v0.0.0-20251026090421-8b0139dff87e/go.mod h1:O7TpWmyS4dV95qyUY/T786VyOsnhf/69KX9SwjDHvKc=
+github.com/RoyceAzure/rj/infra v1.0.0 h1:iHniEgbnvELr5Ewg6cIvNtTmCatqAwdB8yZQr8qxSU0=
+github.com/RoyceAzure/rj/infra v1.0.0/go.mod h1:O7TpWmyS4dV95qyUY/T786VyOsnhf/69KX9SwjDHvKc=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=

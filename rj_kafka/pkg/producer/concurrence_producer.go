@@ -12,6 +12,7 @@ import (
 	"github.com/RoyceAzure/lab/rj_kafka/pkg/config"
 	ka_err "github.com/RoyceAzure/lab/rj_kafka/pkg/errors"
 	"github.com/RoyceAzure/lab/rj_kafka/pkg/model"
+	"github.com/RoyceAzure/rj/infra/pool"
 	"github.com/rs/zerolog"
 	"github.com/segmentio/kafka-go"
 )
@@ -40,17 +41,20 @@ func SetHandlerFailedfunc(f func(model.ProducerError)) Option {
 
 // 同步模式，會block到所有消息都寫入
 // 希望是併發安全，所有Logger調用同一個ConcurrencekafkaProducer
+// 內部buffer size 為 cfg.BatchSize * 2
 type ConcurrencekafkaProducer struct {
-	isRunning          atomic.Bool //結束旗標
-	buffer             []model.Message
 	cfg                config.Config
 	writer             Writer
+	isRunning          atomic.Bool //結束旗標
+	bufferPool         pool.IPool[model.Message]
+	chanMutex          sync.RWMutex
+	logger             *zerolog.Logger
+	buffer             *[]model.Message
 	handlerSuccessfunc func(model.Message) //使用自訂義結構，可方便日後擴展
 	handlerErrorfunc   func(model.ProducerError)
 	receiverCh         chan []model.Message
 	isStopped          chan struct{} //內部程序是否已經停止旗標
-	chanMutex          sync.RWMutex
-	logger             *zerolog.Logger
+
 }
 
 // 目前默認是同步模式，會block到所有消息都寫入
@@ -62,28 +66,12 @@ func NewConcurrencekafkaProducer(w Writer, cfg config.Config, opts ...Option) (*
 		return nil, ka_err.ErrInvalidateParameter
 	}
 
-	// writer := &kafka.Writer{
-	// 	Addr:         kafka.TCP(cfg.Brokers...),
-	// 	Balancer:     cfg.Balancer,
-	// 	Topic:        cfg.Topic,
-	// 	BatchSize:    cfg.BatchSize,
-	// 	BatchTimeout: cfg.Timeout,
-	// 	WriteTimeout: cfg.Timeout,
-	// 	MaxAttempts:  cfg.RetryLimit,
-	// 	Async:        cfg.Async,
-	// 	RequiredAcks: kafka.RequiredAcks(cfg.RequiredAcks),
-
-	// 	// 錯誤處理
-	// 	ErrorLogger: kafka.LoggerFunc(func(msg string, args ...interface{}) {
-	// 		log.Printf("kafka producer error: "+msg, args...)
-	// 	}),
-	// }
-
 	logger := zerolog.New(os.Stdout).Level(zerolog.Level(cfg.LogLevel)).With().Timestamp().Logger()
 	ka := &ConcurrencekafkaProducer{
-		writer: w,
-		cfg:    cfg,
-		logger: &logger,
+		writer:     w,
+		cfg:        cfg,
+		bufferPool: pool.NewBasicPool[model.Message](cfg.BatchSize * 2),
+		logger:     &logger,
 	}
 
 	for _, opt := range opts {
@@ -104,7 +92,7 @@ func (p *ConcurrencekafkaProducer) Start() {
 	if !p.isRunning.CompareAndSwap(false, true) {
 		return
 	}
-	p.buffer = make([]model.Message, 0, p.cfg.BatchSize*5)
+	p.buffer = p.bufferPool.Get()
 	p.receiverCh = make(chan []model.Message, p.cfg.BatchSize*5)
 	p.isStopped = make(chan struct{})
 	go p.produce()
@@ -139,18 +127,18 @@ func (p *ConcurrencekafkaProducer) Produce(ctx context.Context, msgs []model.Mes
 }
 
 // p.handlerSuccessfunc處理p.buffer所有Msg，不會清空buffer
-func (p *ConcurrencekafkaProducer) batchHandleSuccess() {
+func (p *ConcurrencekafkaProducer) batchHandleSuccess(buffer *[]model.Message) {
 	if p.handlerSuccessfunc != nil {
-		for _, msg := range p.buffer {
+		for _, msg := range *buffer {
 			p.handlerSuccessfunc(msg)
 		}
 	}
 }
 
 // p.handlerSuccessfunc處理p.buffer所有Msg，不會清空buffer
-func (p *ConcurrencekafkaProducer) batchHandleFailed(err error) {
+func (p *ConcurrencekafkaProducer) batchHandleFailed(buffer *[]model.Message, err error) {
 	if p.handlerErrorfunc != nil {
-		for _, msg := range p.buffer {
+		for _, msg := range *buffer {
 			p.handlerErrorfunc(model.ProducerError{
 				Message: msg,
 				Err:     err,
@@ -162,9 +150,9 @@ func (p *ConcurrencekafkaProducer) batchHandleFailed(err error) {
 // sendMsg with retry
 // return
 // bool: isFatal, if it is true, need to inmiditily stopping producer
-func (p *ConcurrencekafkaProducer) process() (bool, error) {
+func (p *ConcurrencekafkaProducer) process(buffer *[]model.Message) (bool, error) {
 	for i := 0; i < p.cfg.RetryLimit; i++ {
-		isfatal, err := p.sendMsgs()
+		isfatal, err := p.sendMsgs(buffer)
 		if err == nil {
 			return false, nil
 		}
@@ -179,6 +167,22 @@ func (p *ConcurrencekafkaProducer) process() (bool, error) {
 	return false, fmt.Errorf("producer send msg retry failed after reach limit")
 }
 
+func (p *ConcurrencekafkaProducer) processMsg(buffer *[]model.Message) {
+	isfatal, err := p.process(buffer)
+	// 由子程序來處理所有錯誤
+	// 但是fatal時要先通知主程序，才能觸發關閉chans
+	if err != nil {
+		if isfatal {
+			p.stop(time.Nanosecond, false)
+		}
+		p.batchHandleFailed(buffer, err)
+	} else {
+		p.batchHandleSuccess(buffer)
+	}
+	*buffer = (*buffer)[:0]
+	p.bufferPool.Put(buffer)
+}
+
 // 內部發送程序
 // 結束條件就是完全消耗完receiverCh
 func (p *ConcurrencekafkaProducer) produce() {
@@ -188,89 +192,47 @@ func (p *ConcurrencekafkaProducer) produce() {
 		p.stop(time.Second*15, false)
 	}()
 
-	var (
-		err     error
-		isfatal bool
-	)
-
 	p.logger.Info().Msg("kafka producer start consumeing msg...")
 	ticker := time.NewTicker(p.cfg.CommitInterval)
 	defer ticker.Stop()
 
-	processMsg := func(limit int) (bool, error) {
-		if len(p.buffer) >= limit {
-			p.logger.Debug().Msgf("kafka producer process msg by limit: %d msgs, buffer count: %d", limit, len(p.buffer))
-			isfatal, err = p.process()
-			if err != nil {
-				if isfatal {
-					return true, err
-				} else {
-					p.batchHandleFailed(err)
-				}
-			} else {
-				p.batchHandleSuccess()
-			}
-			//清空buffer
-			p.buffer = p.buffer[:0]
-			//發送完訊息後，重置ticker
-			ticker.Reset(p.cfg.CommitInterval)
-			select {
-			case <-ticker.C:
-			default:
-			}
-		}
-		return false, nil
-	}
-
 	for msg := range p.receiverCh {
-		p.buffer = append(p.buffer, msg...)
+		*p.buffer = append(*p.buffer, msg...)
 		select {
 		case <-ticker.C:
-			p.logger.Debug().Msg("kafka producer triggered by ticker")
-			isfatal, err = processMsg(1)
+			if len(*p.buffer) >= 1 {
+				p.logger.Debug().Msg("kafka producer triggered by ticker")
+				go p.processMsg(p.buffer)
+				p.buffer = p.bufferPool.Get()
+			}
 		default:
-			p.logger.Debug().Msg("kafka producer triggered by default")
-			isfatal, err = processMsg(p.cfg.BatchSize)
-		}
-
-		if isfatal {
-			p.logger.Error().Msgf("kafka producer process fatal error: %s", err.Error())
-			p.stop(time.Nanosecond, false)
-			//目的是要觸發關閉chans
-			//才能針對channel剩餘的資料進行處理
-			for msg := range p.receiverCh {
-				p.buffer = append(p.buffer, msg...)
+			if len(*p.buffer) >= p.cfg.BatchSize {
+				p.logger.Debug().Msg("kafka producer triggered by default")
+				go p.processMsg(p.buffer)
+				p.buffer = p.bufferPool.Get()
 			}
-			if len(p.buffer) > 0 {
-				if err != nil {
-					p.batchHandleFailed(err)
-				} else {
-					p.batchHandleSuccess()
-				}
-				p.buffer = p.buffer[:0]
-			}
-			break
 		}
 	}
-	//處理剩餘buffer內訊息
-	p.logger.Debug().Msgf("kafka producer process remaining msg: %d msgs", len(p.buffer))
-	processMsg(1)
+	//正常結束情況 處理剩餘buffer內訊息
+	if len(*p.buffer) >= 1 {
+		p.processMsg(p.buffer)
+	}
 }
 
 // 發送buffer裡面所有訊息給kafka
 // 失敗會有retry，每次失敗固定等待p.cfg.CommitInterval時間
 // return :
 // true (fatal error), false (temp error)
-func (p *ConcurrencekafkaProducer) sendMsgs() (bool, error) {
+func (p *ConcurrencekafkaProducer) sendMsgs(buffer *[]model.Message) (bool, error) {
 	var err error
 	ctx, cancle := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancle()
 
 	//若是同步模式，會block到所有消息都寫入
-	p.logger.Debug().Msgf("kafka producer send msgs: %d msgs", len(p.buffer))
+	p.logger.Debug().Msgf("kafka producer send msgs: %d msgs", len(*buffer))
 
-	msgs := make([]kafka.Message, 0, len(p.buffer))
-	for _, msg := range p.buffer {
+	msgs := make([]kafka.Message, 0, len(*buffer))
+	for _, msg := range *buffer {
 		msgs = append(msgs, msg.ToKafkaMessage())
 	}
 

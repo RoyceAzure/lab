@@ -3,7 +3,7 @@ module github.com/RoyceAzure/lab/rj_kafka
 go 1.23.3
 
 require (
-	github.com/RoyceAzure/rj/infra v0.0.0-20251026090421-8b0139dff87e
+	github.com/RoyceAzure/rj/infra v1.0.0
 	github.com/golang/mock v1.6.0
 	github.com/segmentio/kafka-go v0.4.48
 	github.com/stretchr/testify v1.10.0
