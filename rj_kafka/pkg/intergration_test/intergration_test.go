@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -57,6 +58,29 @@ func generateTestMessage(n int) []model.Message {
 			Value: b,
 		})
 	}
+	return t
+}
+
+func generateTestMessageChan(n int) chan model.Message {
+	t := make(chan model.Message, n)
+	for i := 0; i < n; i++ {
+		buf := make([]byte, 4)
+		binary.BigEndian.PutUint32(buf, uint32(i))
+		testMsg := TestMsg{
+			Id:      i,
+			Message: fmt.Sprintf("this is test message %d", i),
+		}
+
+		b, err := json.Marshal(testMsg)
+		if err != nil {
+
+		}
+		t <- model.Message{
+			Key:   buf,
+			Value: b,
+		}
+	}
+	close(t)
 	return t
 }
 
@@ -192,6 +216,104 @@ func setUpElDao() (*elsearch.ElSearchDao, error) {
 		return nil, err
 	}
 	return dao, nil
+}
+
+// 測試producer高併發  高流量發送
+func TestProducer(t *testing.T) {
+	testCases := []struct {
+		name                  string
+		each_publish_num      int
+		each_publish_duration time.Duration
+		testMsgs              int
+		generateTestMsg       func(int) chan model.Message
+		earilyStop            time.Duration
+		handlerSuccessfunc    func(successMsgsChan chan kafka.Message, successDeposeCount *atomic.Uint32) func(kafka.Message)
+		handlerErrorfunc      func(failedMsgsChan chan kafka.Message, failedDeposeCount *atomic.Uint32) func(model.ConsuemError)
+	}{
+		{
+			name:                  "all send, check kafka ui message num",
+			testMsgs:              100000,
+			each_publish_num:      3000,
+			each_publish_duration: 10 * time.Millisecond,
+			generateTestMsg:       generateTestMessageChan,
+			earilyStop:            time.Second * 20,
+			handlerSuccessfunc: func(successMsgsChan chan kafka.Message, successDeposeCount *atomic.Uint32) func(kafka.Message) {
+				return func(msg kafka.Message) {
+					select {
+					case successMsgsChan <- msg:
+					default:
+						successDeposeCount.Add(1)
+					}
+				}
+			},
+			handlerErrorfunc: func(failedMsgsChan chan kafka.Message, failedDeposeCount *atomic.Uint32) func(model.ConsuemError) {
+				return func(err model.ConsuemError) {
+					select {
+					case failedMsgsChan <- err.Message:
+					default:
+						failedDeposeCount.Add(1)
+					}
+				}
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			closeEnv := setupTestEnvironment(t)
+			defer closeEnv()
+
+			writer, err := setUpWriter()
+			require.NoError(t, err)
+
+			cfg.BatchSize = 8000
+			cfg.CommitInterval = time.Millisecond * 100
+			cfg.RequiredAcks = 0
+			cfg.LogLevel = config.DebugLevel
+
+			producer, err := producer.NewConcurrencekafkaProducer(writer, *cfg)
+			require.NoError(t, err)
+
+			producer.Start()
+
+			time.Sleep(time.Second * 10) // 等待kafka相關初始化
+
+			testMsgs := tc.generateTestMsg(tc.testMsgs)
+			failedmu := sync.Mutex{}
+			sendFailedMsg := make([]model.Message, 0, tc.testMsgs)
+
+			wg := sync.WaitGroup{}
+
+			for range tc.each_publish_num {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					ticker := time.NewTicker(tc.each_publish_duration)
+					defer ticker.Stop()
+					for msg := range testMsgs {
+						<-ticker.C
+						sendFailed, err := producer.Produce(context.Background(), []model.Message{msg})
+						if err != nil {
+							failedmu.Lock()
+							sendFailedMsg = append(sendFailedMsg, sendFailed...)
+							failedmu.Unlock()
+						}
+					}
+				}()
+			}
+
+			wg.Wait()
+
+			if err != nil {
+				t.Logf("error: %s", err.Error())
+			}
+			time.Sleep(time.Second * 10)
+			require.Equal(t, len(sendFailedMsg), 0, "send failed message is not empty")
+		})
+	}
 }
 
 func TestProducerAdbvance(t *testing.T) {

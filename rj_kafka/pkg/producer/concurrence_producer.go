@@ -196,17 +196,30 @@ func (p *ConcurrencekafkaProducer) produce() {
 	ticker := time.NewTicker(p.cfg.CommitInterval)
 	defer ticker.Stop()
 
-	for msg := range p.receiverCh {
-		*p.buffer = append(*p.buffer, msg...)
+normal_loop:
+	for {
 		select {
 		case <-ticker.C:
-			if len(*p.buffer) >= p.cfg.BatchSize {
+			if len(*p.buffer) > 0 {
 				go p.processMsg(p.buffer)
 				p.buffer = p.bufferPool.Get()
 			}
 		default:
+			select {
+			case msg, ok := <-p.receiverCh:
+				if !ok {
+					break normal_loop
+				}
+				*p.buffer = append(*p.buffer, msg...)
+				if len(*p.buffer) >= p.cfg.BatchSize {
+					go p.processMsg(p.buffer)
+					p.buffer = p.bufferPool.Get()
+				}
+			default:
+			}
 		}
 	}
+
 	//正常結束情況 處理剩餘buffer內訊息
 	if len(*p.buffer) >= 1 {
 		p.processMsg(p.buffer)
