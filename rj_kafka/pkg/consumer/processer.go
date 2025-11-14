@@ -33,6 +33,7 @@ type KafkaElProcesser struct {
 
 // bufferSize int 最大batch size
 // Process操作將會是併發，所以batch size應設為 需求數/併發數
+// 將會用kafka msg topic 作為elasticsearch index
 func NewKafkaElProcesser(elDao elsearch.IElSearchDao, commitInterval time.Duration) (*KafkaElProcesser, error) {
 	return &KafkaElProcesser{
 		dao:            elDao,
@@ -55,5 +56,5 @@ func (p *KafkaElProcesser) Process(ctx context.Context, msgs []kafka.Message) er
 		}
 		documents = append(documents, doc)
 	}
-	return p.dao.BatchInsert(string(msgs[0].Key), documents)
+	return p.dao.BatchInsert(string(msgs[0].Topic), documents)
 }

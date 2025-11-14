@@ -234,7 +234,7 @@ func TestProducer(t *testing.T) {
 			name:                  "all send, check kafka ui message num",
 			testMsgs:              100000,
 			each_publish_num:      3000,
-			each_publish_duration: 10 * time.Millisecond,
+			each_publish_duration: 1 * time.Millisecond,
 			generateTestMsg:       generateTestMessageChan,
 			earilyStop:            time.Second * 20,
 			handlerSuccessfunc: func(successMsgsChan chan kafka.Message, successDeposeCount *atomic.Uint32) func(kafka.Message) {
@@ -269,7 +269,7 @@ func TestProducer(t *testing.T) {
 			writer, err := setUpWriter()
 			require.NoError(t, err)
 
-			cfg.BatchSize = 8000
+			cfg.BatchSize = 10000
 			cfg.CommitInterval = time.Millisecond * 100
 			cfg.RequiredAcks = 0
 			cfg.LogLevel = config.DebugLevel
@@ -311,7 +311,7 @@ func TestProducer(t *testing.T) {
 				t.Logf("error: %s", err.Error())
 			}
 			time.Sleep(time.Second * 10)
-			require.Equal(t, len(sendFailedMsg), 0, "send failed message is not empty")
+			require.Equal(t, 0, len(sendFailedMsg), "send failed message is not empty")
 		})
 	}
 }
