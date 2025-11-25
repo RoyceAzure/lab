@@ -204,18 +204,14 @@ normal_loop:
 				go p.processMsg(p.buffer)
 				p.buffer = p.bufferPool.Get()
 			}
-		default:
-			select {
-			case msg, ok := <-p.receiverCh:
-				if !ok {
-					break normal_loop
-				}
-				*p.buffer = append(*p.buffer, msg...)
-				if len(*p.buffer) >= p.cfg.BatchSize {
-					go p.processMsg(p.buffer)
-					p.buffer = p.bufferPool.Get()
-				}
-			default:
+		case msg, ok := <-p.receiverCh:
+			if !ok {
+				break normal_loop
+			}
+			*p.buffer = append(*p.buffer, msg...)
+			if len(*p.buffer) >= p.cfg.BatchSize {
+				go p.processMsg(p.buffer)
+				p.buffer = p.bufferPool.Get()
 			}
 		}
 	}
